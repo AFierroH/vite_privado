@@ -1,0 +1,11 @@
+/* Import tailwind v4 (zero-config) and small theme variables. */
+/* Use CSS vars to keep dark/light theme easy to switch via 'dark' class on html. */
+@import "tailwindcss";
+
+:root{
+  --bg: #071025;
+  --panel: #0f1724;
+  --muted: #94a3b8;
+  --accent: #8b5cf6;
+}
+html.dark { background: var(--bg); color-scheme: dark; }
