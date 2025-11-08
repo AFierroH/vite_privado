@@ -20,19 +20,13 @@
       </template>
     </nav>
 
-    <!-- SECCIÓN DE ATAJOS -->
-    <div class="mt-4 text-xs text-[var(--muted)]">
-      <div class="mb-2">Atajos</div>
-      <div>• Ctrl+P: Imprimir</div>
-    </div>
-
     <!-- LOGOUT -->
     <div class="mt-6 border-t border-gray-700 pt-3">
       <button
         @click="logout"
         class="w-full px-3 py-2 text-left rounded text-red-400 hover:bg-red-600 hover:text-white transition"
       >
-        🔒 Cerrar sesión
+        Cerrar sesión
       </button>
     </div>
   </aside>
