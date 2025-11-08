@@ -37,7 +37,6 @@ function renewSession() {
   // Renovar +5 minutos calculo xd 5 * 60 * 1000ms
   session.expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
   localStorage.setItem('session', JSON.stringify(session))
-  console.log('Sesión renovada hasta:', session.expiresAt)
 }
 
 onMounted(() => {

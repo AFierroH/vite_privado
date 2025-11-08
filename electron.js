@@ -1,11 +1,18 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { getPrinters, print } from 'pdf-to-printer'
+import usb from 'usb'
+import SerialPort from 'serialport'
+import net from 'net'
+import fs from 'fs'
+import { createRequire } from 'module'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const require = createRequire(import.meta.url)
 
-let mainWindow 
+let mainWindow
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -18,128 +25,121 @@ function createWindow() {
     }
   })
 
-  const devUrl = 'http://localhost:5173'
+  // carga frontend o URL del backend remoto
+  const devUrl = 'http://147.182.245.46'
   mainWindow.loadURL(devUrl)
 }
 
 app.whenReady().then(createWindow)
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
 
-
-async function tryImport(moduleName) {
-  try { return await import(moduleName) } catch (e) { return null }
-}
-
-ipcMain.handle('list-printers', async (event) => {
+ipcMain.handle('listSystemPrinters', async () => {
   try {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (win && win.webContents.getPrinters) {
-      return win.webContents.getPrinters()
-    } else {
-      console.warn('getPrinters no disponible en este contexto')
-      return []
-    }
+    const list = await getPrinters()
+    return list.map(p => p.name)
   } catch (err) {
-    console.error('❌ list-printers error:', err)
+    console.error('Error listSystemPrinters:', err)
     return []
   }
 })
 
-ipcMain.handle('list-usb-devices', async () => {
+/* ---------------------------------------------------
+   🔌 Listar dispositivos USB conectados
+--------------------------------------------------- */
+ipcMain.handle('listUsbDevices', async () => {
   try {
-    const usbDetection = await tryImport('usb-detection')
-    if (!usbDetection || !usbDetection.find) return []
-    // usb-detection ESM import shape varies; call default if needed
-    const detector = usbDetection.default ?? usbDetection
-    // detector.find returns Promise in some versions, callback in others
-    if (detector.find && detector.find.length === 1) {
-      return await detector.find()
-    }
-    // fallback: try synchronous .getDetectedDevices (rare)
-    return []
+    const devices = usb.getDeviceList().map(d => ({
+      vendorId: d.deviceDescriptor.idVendor,
+      productId: d.deviceDescriptor.idProduct
+    }))
+    return devices
   } catch (err) {
-    console.error('list-usb-devices error', err)
+    console.error('Error listUsbDevices:', err)
     return []
   }
 })
 
-ipcMain.handle('list-serial-ports', async () => {
+/* ---------------------------------------------------
+   🔍 Detectar escáneres (USB imaging devices)
+--------------------------------------------------- */
+ipcMain.handle('detectScanners', async () => {
   try {
-    const sp = await tryImport('serialport')
-    const SerialPort = sp?.SerialPort ?? sp?.default ?? sp
-    if (!SerialPort || typeof SerialPort.list !== 'function') return []
-    return await SerialPort.list()
+    const scanners = usb.getDeviceList().filter(
+      d => d.deviceDescriptor.bDeviceClass === 0x0e
+    )
+    return scanners.map(s => ({
+      vendorId: s.deviceDescriptor.idVendor,
+      productId: s.deviceDescriptor.idProduct
+    }))
   } catch (err) {
-    console.error('list-serial-ports error', err)
+    console.error('detectScanners error', err)
     return []
   }
 })
 
-// alias que tu frontend llama: detect-scanners -> serial ports
-ipcMain.handle('detect-scanners', async (event) => {
-  try {
-    const list = await ipcMain.invoke?.('list-serial-ports') // not directly available, call implementation:
-    // call implementation directly:
-    const sp = await tryImport('serialport')
-    const SerialPort = sp?.SerialPort ?? sp?.default ?? sp
-    if (!SerialPort || typeof SerialPort.list !== 'function') return []
-    return await SerialPort.list()
-  } catch (err) {
-    console.error('detect-scanners error', err)
-    return []
-  }
+/* ---------------------------------------------------
+   📡 Ping a impresora LAN por IP:9100
+--------------------------------------------------- */
+ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
+  return new Promise(resolve => {
+    const socket = new net.Socket()
+    socket.setTimeout(800)
+    socket.connect(port, ip, () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.on('error', () => resolve(false))
+    socket.on('timeout', () => resolve(false))
+  })
 })
 
-// print-raw: LAN (TCP) and COM (serial) implemented. USB/raw other methods require libs (escpos/node-usb).
-ipcMain.handle('print-raw', async (event, base64, options = {}) => {
+/* ---------------------------------------------------
+   🧾 Imprimir datos crudos (RAW)
+   Soporta:
+   - type: "lan", "com", "auto"
+   - printer: nombre Windows
+   - ip / port / com / usb
+--------------------------------------------------- */
+ipcMain.handle('printRaw', async (event, base64, options = {}) => {
   try {
-    const buf = Buffer.from(base64, 'base64')
-    const { type = 'auto', ip, port = 9100, com, baudRate = 9600 } = options
+    const buffer = Buffer.from(base64, 'base64')
+    const { type = 'auto', ip, port = 9100, com, baudRate = 9600, printer } = options
 
+    // 🖨️ LAN
     if ((type === 'lan' || type === 'auto') && ip) {
-      const net = await tryImport('net') // net is built-in; dynamic import returns module object in ESM loader
-      // net may not be loadable via import(), use require fallback via createRequire
-      let netLib
-      try {
-        netLib = await import('net')
-      } catch {
-        // fallback using require via createRequire
-        const { createRequire } = await import('module')
-        netLib = createRequire(import.meta.url)('net')
-      }
-      await new Promise((resolve, reject) => {
-        const client = netLib.Socket ? new netLib.Socket() : new netLib.Socket()
-        client.setTimeout(5000)
+      return await new Promise((resolve, reject) => {
+        const client = new net.Socket()
         client.connect(port, ip, () => {
-          client.write(buf)
+          client.write(buffer)
           client.end()
+          resolve({ ok: true, method: 'lan' })
         })
-        client.on('close', resolve)
-        client.on('error', reject)
-        client.on('timeout', () => { client.destroy(); reject(new Error('timeout')) })
+        client.on('error', err => reject(err))
       })
-      return { ok: true, method: 'lan' }
     }
 
+    // 🧵 Puerto serial COM
     if ((type === 'com' || type === 'auto') && com) {
-      const spModule = await tryImport('serialport')
-      const SerialPort = spModule?.SerialPort ?? spModule?.default ?? spModule
-      if (!SerialPort || typeof SerialPort !== 'function') throw new Error('serialport no instalado')
-      const portInstance = new SerialPort(com, { baudRate })
-      await new Promise((resolve, reject) => {
-        portInstance.write(buf, (err) => { if (err) reject(err); else resolve() })
-      })
-      portInstance.close?.()
+      const portInstance = new SerialPort({ path: com, baudRate })
+      portInstance.write(buffer)
+      portInstance.close()
       return { ok: true, method: 'com' }
     }
 
-    return { ok: false, error: 'No se envió: falta implementación para este tipo', type }
+    // 🖨️ Impresora del sistema
+    if (printer) {
+      const temp = path.join(app.getPath('temp'), 'ticket-raw.txt')
+      fs.writeFileSync(temp, buffer.toString('utf8'))
+      await print(temp, { printer, win32: ['RAW'] })
+      return { ok: true, method: 'system' }
+    }
+
+    return { ok: false, error: 'Tipo no soportado o faltan parámetros' }
   } catch (err) {
-    console.error('print-raw error', err)
+    console.error('printRaw error:', err)
     return { ok: false, error: err.message }
   }
 })

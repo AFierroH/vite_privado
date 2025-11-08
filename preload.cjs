@@ -1,9 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  listSystemPrinters: () => ipcRenderer.invoke('list-printers'),
-  listUsbDevices: () => ipcRenderer.invoke('list-usb-devices'),
-  listSerialPorts: () => ipcRenderer.invoke('list-serial-ports'),
-  detectScanners: () => ipcRenderer.invoke('detect-scanners'),
-  printRaw: (base64, options) => ipcRenderer.invoke('print-raw', base64, options)
+  listSystemPrinters: () => ipcRenderer.invoke('listSystemPrinters'),
+  listUsbDevices: () => ipcRenderer.invoke('listUsbDevices'),
+  detectScanners: () => ipcRenderer.invoke('detectScanners'),
+  pingPrinter: (ip, port) => ipcRenderer.invoke('pingPrinter', ip, port),
+  printRaw: (data, options) => ipcRenderer.invoke('printRaw', data, options),
 })

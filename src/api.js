@@ -56,4 +56,4 @@ export const previewMapping = (body) => axios.post(`${API_URL}/preview`, body);
 export const processImport = (uploadId, body) =>
   axios.post(`${API_URL}/process/${uploadId}`, body);
 
-export default api;
+export { api, API_URL };
