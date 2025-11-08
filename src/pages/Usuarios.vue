@@ -38,7 +38,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import api from '../api'
+import { api } from '../api'
 
 const usuarios = ref([])
 const showModal = ref(false)
