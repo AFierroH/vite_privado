@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getPrinters, print } from 'pdf-to-printer'
+import pkg from 'pdf-to-printer'
+const { getPrinters, print } = pkg
 import usb from 'usb'
 import SerialPort from 'serialport'
 import net from 'net'
