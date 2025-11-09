@@ -1,31 +1,31 @@
 <template>
   <aside class="w-1/5 max-w-[300px] bg-[var(--panel)] border-r border-gray-800 p-4 flex flex-col">
-    <!-- ENCABEZADO -->
+    <!-- Encabezado -->
     <div class="mb-6">
       <div class="text-lg font-bold text-white">MiEmpresa</div>
-      <div class="text-xs text-[var(--muted)]">
-        {{ user?.email || 'Cuenta Demo' }}
-      </div>
+      <div class="text-xs text-[var(--muted)]">{{ user?.email || 'Cuenta Demo' }}</div>
     </div>
 
-    <!-- NAVEGACIÓN -->
+    <!-- Navegación -->
     <nav class="flex-1 overflow-auto">
       <template v-for="item in filteredItems" :key="item.key">
-        <button
+        <button 
           @click="$router.push(item.route)"
-          class="w-full text-left px-3 py-2 rounded mb-1 text-[var(--muted)] hover:bg-[var(--accent)] hover:text-black transition"
-        >
+          class="w-full text-left px-3 py-2 rounded mb-1 text-[var(--muted)] hover:bg-[var(--accent)] hover:text-black transition">
           {{ item.title }}
         </button>
       </template>
     </nav>
 
-    <!-- LOGOUT -->
-    <div class="mt-6 border-t border-gray-700 pt-3">
-      <button
-        @click="logout"
-        class="w-full px-3 py-2 text-left rounded text-red-400 hover:bg-red-600 hover:text-white transition"
-      >
+    <!-- Sección inferior -->
+    <div class="mt-4 border-t border-gray-700 pt-3">
+      <div class="text-xs text-[var(--muted)] mb-2">Atajos</div>
+      <div class="text-xs text-[var(--muted)]">• Ctrl+P: Imprimir</div>
+
+      <!-- Botón de logout -->
+      <button 
+        @click="$emit('logout')" 
+        class="mt-4 w-full px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
         Cerrar sesión
       </button>
     </div>
@@ -34,13 +34,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { auth } from '../store/auth'
-
 defineProps({ user: Object })
-const router = useRouter()
+defineEmits(['logout'])
 
-// Lista de items del menú
 const items = [
   { key: 'dashboard', title: 'Dashboard', route: '/dashboard' },
   { key: 'ventas', title: 'Ventas', route: '/ventas' },
@@ -52,17 +48,9 @@ const items = [
   { key: 'impresora', title: 'Prueba', route: '/impresora' }
 ]
 
-// Filtra ítems si el usuario no es admin
 const filteredItems = computed(() =>
-  auth.user?.rol === 'admin' || auth.user?.role === 'admin'
+  user?.rol === 'admin'
     ? items
     : items.filter(i => !i.adminOnly)
 )
-
-// Acción de logout
-function logout() {
-  localStorage.removeItem('session')
-  auth.setSession(null, null)
-  router.push('/login')
-}
 </script>

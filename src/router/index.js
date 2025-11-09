@@ -8,7 +8,9 @@ import Configuracion from '../pages/Configuracion.vue'
 import printTest from '../pages/PruebaImpresora.vue'
 import Usuarios from '../pages/Usuarios.vue'
 import Importer from '../pages/Importer.vue'
+import Login from '../pages/Login.vue'
 const routes = [
+    { path: '/login', component: Login },
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: Dashboard },
   { path: '/estadisticas', component: Estadisticas },
