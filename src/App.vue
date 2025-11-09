@@ -1,22 +1,21 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watchEffect } from 'vue' 
 import LoginPage from './pages/Login.vue'
 import MainLayout from './pages/MainLayout.vue'
 
 const user = ref(null)
 
-// Manejadores de sesión
 function handleLogin(session) {
   user.value = session.user
   localStorage.setItem('session', JSON.stringify(session))
-  console.log('Sesión iniciada:', session.user)
+  console.log('✅ Sesión iniciada:', session.user)
 }
 
 function logout() {
   user.value = null
   localStorage.removeItem('session')
   console.log('Sesión cerrada')
-  window.location.reload() // recarga limpia
+  window.location.reload() 
 }
 
 function renewSession() {
@@ -32,7 +31,6 @@ function renewSession() {
   }
 }
 
-// Cargar sesión previa
 onMounted(() => {
   const sessionStr = localStorage.getItem('session')
   if (sessionStr) {
@@ -51,7 +49,6 @@ onMounted(() => {
     }
   }
 
-  // Escuchar actividad para renovar sesión
   window.addEventListener('click', renewSession)
   window.addEventListener('keydown', renewSession)
   window.addEventListener('scroll', renewSession)
@@ -63,9 +60,8 @@ onUnmounted(() => {
   window.removeEventListener('scroll', renewSession)
 })
 
-// Solo para depurar
 watchEffect(() => {
-  console.log('👤 Usuario actual:', user.value)
+  console.log('Usuario actual:', user.value)
 })
 </script>
 
