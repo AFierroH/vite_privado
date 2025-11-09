@@ -7,7 +7,7 @@ const user = ref(null)
 function handleLogin(session) {
   user.value = session.user
   localStorage.setItem('session', JSON.stringify(session))
-  console.log('✅ Sesión iniciada:', session.user)
+  console.log('Sesión iniciada:', session.user)
 }
 function logout() {
   user.value = null
@@ -55,5 +55,8 @@ onUnmounted(() => {
   <div class="min-h-screen bg-[#071025] text-gray-100">
     <LoginPage v-if="!user" @login-success="handleLogin" />
     <MainLayout v-else :user="user" @logout="logout" />
+<script>
+console.log('USER EN MAINLAYOUT:', user.value)
+</script>
   </div>
 </template>

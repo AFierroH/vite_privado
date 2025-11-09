@@ -47,7 +47,7 @@ const items = [
   { key: 'impresora', title: 'Prueba', route: '/impresora' }
 ]
 
-// ✅ Filtrar por rol
+// Filtrar por rol
 const filteredItems = computed(() => {
   return props.user?.rol === 'admin'
     ? items
