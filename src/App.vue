@@ -1,14 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watchEffect } from 'vue' 
+import { ref, onMounted, onUnmounted, watchEffect } from 'vue'
 import LoginPage from './pages/Login.vue'
 import MainLayout from './pages/MainLayout.vue'
 
 const user = ref(null)
+const isReady = ref(false) 
 
 function handleLogin(session) {
   user.value = session.user
   localStorage.setItem('session', JSON.stringify(session))
-  console.log('✅ Sesión iniciada:', session.user)
+  console.log('Sesión iniciada:', session.user)
 }
 
 function logout() {
@@ -39,6 +40,7 @@ onMounted(() => {
       const now = new Date()
       if (new Date(session.expiresAt) > now) {
         user.value = session.user
+        console.log('Sesión cargada:', session.user)
       } else {
         console.log('Sesión expirada al iniciar')
         logout()
@@ -48,7 +50,7 @@ onMounted(() => {
       logout()
     }
   }
-
+  isReady.value = true 
   window.addEventListener('click', renewSession)
   window.addEventListener('keydown', renewSession)
   window.addEventListener('scroll', renewSession)
@@ -60,14 +62,14 @@ onUnmounted(() => {
   window.removeEventListener('scroll', renewSession)
 })
 
-watchEffect(() => {
-  console.log('Usuario actual:', user.value)
-})
+watchEffect(() => console.log('Usuario actual:', user.value))
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#071025] text-gray-100">
-    <LoginPage v-if="!user" @login-success="handleLogin" />
-    <MainLayout v-else :user="user.value" @logout="logout" />
+  <div class="min-h-screen bg-[#071025] text-gray-100 flex items-center justify-center">
+    <div v-if="!isReady" class="text-gray-400">Cargando sesión...</div>
+
+    <LoginPage v-else-if="!user" @login-success="handleLogin" />
+    <MainLayout v-else :user="user" @logout="logout" />
   </div>
 </template>

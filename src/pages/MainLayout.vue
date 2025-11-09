@@ -15,7 +15,7 @@ import Sidebar from '../components/Sidebar.vue'
 import Topbar from '../components/Topbar.vue'
 
 defineProps({
-  user: { type: Object, required: true } // asegura que 'user' exista
+  user: { type: Object, required: true } 
 })
 defineEmits(['logout'])
 
