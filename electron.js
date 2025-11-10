@@ -48,7 +48,7 @@ ipcMain.handle('listSystemPrinters', async () => {
 })
 
 /* ---------------------------------------------------
-   🔌 Listar dispositivos USB conectados
+Listar dispositivos USB conectados
 --------------------------------------------------- */
 ipcMain.handle('listUsbDevices', async () => {
   try {
@@ -64,7 +64,7 @@ ipcMain.handle('listUsbDevices', async () => {
 })
 
 /* ---------------------------------------------------
-   🔍 Detectar escáneres (USB imaging devices)
+Detectar escáneres (USB imaging devices)
 --------------------------------------------------- */
 ipcMain.handle('detectScanners', async () => {
   try {
@@ -82,7 +82,7 @@ ipcMain.handle('detectScanners', async () => {
 })
 
 /* ---------------------------------------------------
-   📡 Ping a impresora LAN por IP:9100
+Ping a impresora LAN por IP:9100
 --------------------------------------------------- */
 ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
   return new Promise(resolve => {
@@ -104,43 +104,63 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
    - printer: nombre Windows
    - ip / port / com / usb
 --------------------------------------------------- */
-ipcMain.handle('printRaw', async (event, base64, options = {}) => {
+ipcMain.handle('print-raw', async (event, base64Data, options) => {
+  console.log('Handling print-raw call with options:', options)
+  const data = Buffer.from(base64Data, 'base64')
+
   try {
-    const buffer = Buffer.from(base64, 'base64')
-    const { type = 'auto', ip, port = 9100, com, baudRate = 9600, printer } = options
+    // Lógica para LAN, USB, COM 
+    if (options.type === 'lan') {
+      // LAN
+      console.log(`Printing via LAN to ${options.ip}:${options.port}`)
+      const device = new escpos.Network(options.ip, options.port)
+      return { ok: true, method: 'lan' }
 
-    // 🖨️ LAN
-    if ((type === 'lan' || type === 'auto') && ip) {
-      return await new Promise((resolve, reject) => {
-        const client = new net.Socket()
-        client.connect(port, ip, () => {
-          client.write(buffer)
-          client.end()
-          resolve({ ok: true, method: 'lan' })
-        })
-        client.on('error', err => reject(err))
-      })
-    }
+    } else if (options.type === 'usb') {
+      // USB
+      return { ok: true, method: 'usb' }
 
-    // 🧵 Puerto serial COM
-    if ((type === 'com' || type === 'auto') && com) {
-      const portInstance = new SerialPort({ path: com, baudRate })
-      portInstance.write(buffer)
-      portInstance.close()
+    } else if (options.type === 'com') {
+      // COM
       return { ok: true, method: 'com' }
-    }
 
-    // 🖨️ Impresora del sistema
-    if (printer) {
-      const temp = path.join(app.getPath('temp'), 'ticket-raw.txt')
-      fs.writeFileSync(temp, buffer.toString('utf8'))
-      await print(temp, { printer, win32: ['RAW'] })
+    } else {
+      console.log('Printing via electron-pos-printer (system default/selected)')
+      let printerToUse = options.printer 
+
+      if (!printerToUse) {
+        console.log('No printer selected. Finding system default printer...')
+        try {
+          const printers = await win.webContents.getPrintersAsync()
+          const defaultPrinter = printers.find(p => p.isDefault)
+
+          if (defaultPrinter) {
+            printerToUse = defaultPrinter.name
+            console.log('Using system default printer:', printerToUse)
+          } else {
+            console.error('No printer selected and no default printer found!')
+            throw new Error('No printer selected and no default printer found')
+          }
+        } catch (e) {
+          console.error('Error finding default printer:', e)
+          throw e 
+        }
+      }
+
+      // Ahora llamamos a PosPrinter con un nombre de impresora válido
+      await PosPrinter.print(
+        [{ type: 'raw', value: data }], 
+        {
+          printerName: printerToUse, // Nombre de la impresora (ya sea seleccionada o la default)
+          silent: true,
+        }
+      )
+      
       return { ok: true, method: 'system' }
     }
 
-    return { ok: false, error: 'Tipo no soportado o faltan parámetros' }
   } catch (err) {
-    console.error('printRaw error:', err)
+    console.error('Error en print-raw:', err.message, err)
     return { ok: false, error: err.message }
   }
 })
