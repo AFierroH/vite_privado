@@ -42,7 +42,7 @@
         <div class="text-sm text-[var(--muted)] ml-4">Dispositivo escáner: {{ connectedScanners.length ? connectedScanners.join(', ') : '—' }}</div>
       </div>
       <div v-if="voucherLoaded" class="mt-3 text-white">
-        Voucher cargado: <strong>#{{ voucherLoaded.numero }}</strong> — total: ${{ voucherLoaded.total }}
+        Voucher cargado: <strong>#{{ voucherLoaded.numero }}</strong> — total: {{ formatPrice(voucherLoaded.total) }}
       </div>
     </div>
 
@@ -80,7 +80,7 @@
           <div class="grid grid-cols-3 gap-3">
             <div v-for="p in productos" :key="p.id_producto" class="p-3 bg-[#071226] rounded">
               <div class="font-medium">{{ p.nombre }}</div>
-              <div class="text-sm text-[var(--muted)]">${{ p.precio }}</div>
+              <div class="text-sm text-[var(--muted)]">{{ formatPrice(p.precio) }}</div>
               <button class="mt-2 px-2 py-1 bg-[var(--accent)] text-black rounded" @click="addProduct(p)">Añadir</button>
             </div>
           </div>
@@ -97,10 +97,10 @@
               <div>{{it.nombre}} x</div>
               <input type="number" min="1" v-model.number="it.cantidad" @change="recalcLine(it)" class="w-16 p-1 rounded bg-[#081026] text-white" />
             </div>
-            <div>${{it.subtotal}}</div>
+            <div>{{ formatPrice(it.subtotal) }}</div>
           </div>
 
-          <div class="mt-4 text-right font-semibold">Total: ${{ total }}</div>
+          <div class="mt-4 text-right font-semibold">Total: {{ formatPrice(total) }}</div>
 
           <div class="mt-3 flex gap-2">
             <button class="px-3 py-2 rounded bg-green-500" @click="checkout">Pagar</button>
@@ -141,8 +141,19 @@ import { fetchProducts, emitirVenta, fetchVoucher } from '../api'
 import { useAuth } from '../composables/useAuth.js'
 
 const { currentUser } = useAuth()
+function formatPrice(value) {
+  const numberValue = Number(value)
+  if (isNaN(numberValue)) {
+    return '$0' 
+  }
+return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    maximumFractionDigits: 0, 
+    minimumFractionDigits: 0
+  }).format(numberValue)
+}
 
-// estado
 const scan = ref('')
 const q = ref('')
 const productos = ref([])
@@ -157,12 +168,10 @@ const printerInfo = ref({ ip: '', port: 9100, usb: null, com: null })
 const usbDevices = ref([])
 const connectedScanners = ref([])
 
-// voucher
 const sessionMode = ref('normal')
 const voucherNumber = ref('')
 const voucherLoaded = ref(null)
 
-// helpers
 async function search() {
   try {
     const r = await fetchProducts(q.value)
