@@ -107,137 +107,137 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
    - ip / port / com / usb
 --------------------------------------------------- */
 /* ---------------------------------------------------
-   🧾 Imprimir datos crudos (RAW)
-   Soporta:
-   - type: "lan", "com", "auto", "usb"
+   🧾 Imprimir datos crudos (RAW)
+   Soporta:
+   - type: "lan", "com", "auto", "usb"
 --------------------------------------------------- */
 ipcMain.handle('printRaw', async (event, base64Data, options) => {
-  console.log('Handling print-raw call with options:', options)
-  const data = Buffer.from(base64Data, 'base64')
+  console.log('Handling print-raw call with options:', options)
+  const data = Buffer.from(base64Data, 'base64')
 
-  try {
-    // --- CASO 1: Impresión por LAN (IP) Directa ---
-    // Usa 'escpos' para hablar directo con la IP, ignorando Windows.
-    if (options.type === 'lan') {
-      console.log(`Printing via LAN (direct) to ${options.ip}:${options.port}`)
-      if (!options.ip || !options.port) {
-        throw new Error('IP o Puerto no especificados para LAN')
-      }
+  try {
+    // --- CASO 1: Impresión por LAN (IP) Directa ---
+    // Usa 'escpos' para hablar directo con la IP, ignorando Windows.
+    if (options.type === 'lan') {
+      console.log(`Printing via LAN (direct) to ${options.ip}:${options.port}`)
+      if (!options.ip || !options.port) {
+        throw new Error('IP o Puerto no especificados para LAN')
+      }
 
-      // 'escpos' usa callbacks, así que lo envolvemos en una Promesa
-      return new Promise((resolve, reject) => {
-        const device = new escpos.Network(options.ip, options.port)
-        const printer = new escpos.Printer(device)
+      // 'escpos' usa callbacks, así que lo envolvemos en una Promesa
+      return new Promise((resolve, reject) => {
+        const device = new escpos.Network(options.ip, options.port)
+        const printer = new escpos.Printer(device)
 
-        // Timeout por si la impresora no responde
-        const connectionTimeout = setTimeout(() => {
-            reject(new Error('Error: Timeout de conexión LAN (5s)'))
-            device.close() // Intenta cerrar
-        }, 5000)
+        // Timeout por si la impresora no responde
+        const connectionTimeout = setTimeout(() => {
+            reject(new Error('Error: Timeout de conexión LAN (5s)'))
+            device.close() // Intenta cerrar
+        }, 5000)
 
-        device.open((err) => {
-            clearTimeout(connectionTimeout) // Éxito, limpiar timeout
-            if (err) {
-              console.error('Error al abrir conexión LAN:', err)
-              return reject(new Error(`Error LAN: ${err.message}`))
-            }
-            
-            printer.raw(data) // Envía los bytes crudos
-            printer.close() // Corta y cierra la conexión
-            
-            console.log('Datos enviados a LAN correctamente.')
-            resolve({ ok: true, method: 'lan' })
-        })
+        device.open((err) => {
+            clearTimeout(connectionTimeout) // Éxito, limpiar timeout
+            if (err) {
+              console.error('Error al abrir conexión LAN:', err)
+              return reject(new Error(`Error LAN: ${err.message}`))
+            }
+            
+            printer.raw(data) // Envía los bytes crudos
+            printer.close() // Corta y cierra la conexión
+            
+            console.log('Datos enviados a LAN correctamente.')
+            resolve({ ok: true, method: 'lan' })
+        })
 
-        device.on('error', (err) => {
-            clearTimeout(connectionTimeout)
-            console.error('Error de Socket LAN:', err)
-            reject(new Error(`Error Socket: ${err.message}`))
-        })
-      })
-    }
+        device.on('error', (err) => {
+            clearTimeout(connectionTimeout)
+            console.error('Error de Socket LAN:', err)
+            reject(new Error(`Error Socket: ${err.message}`))
+        })
+      })
+    }
 
-    // --- CASO 2: Impresión por COM (Serial) Directa ---
-    // Usa 'escpos' para hablar directo con el puerto COM.
-    else if (options.type === 'com') {
-      console.log(`Printing via COM (direct) to ${options.com}`)
-      if (!options.com) {
-        throw new Error('Puerto COM no especificado')
-      }
+    // --- CASO 2: Impresión por COM (Serial) Directa ---
+    // Usa 'escpos' para hablar directo con el puerto COM.
+    else if (options.type === 'com') {
+      console.log(`Printing via COM (direct) to ${options.com}`)
+      if (!options.com) {
+        throw new Error('Puerto COM no especificado')
+      }
 
-      return new Promise((resolve, reject) => {
-        // 9600 es el baudRate más común para impresoras térmicas
-        const device = new escpos.Serial(options.com, { baudRate: 9600 })
-        const printer = new escpos.Printer(device)
+      return new Promise((resolve, reject) => {
+        // 9600 es el baudRate más común para impresoras térmicas
+        const device = new escpos.Serial(options.com, { baudRate: 9600 })
+        const printer = new escpos.Printer(device)
 
-        device.open((err) => {
-            if (err) {
-              console.error('Error al abrir conexión COM:', err)
-              return reject(new Error(`Error COM: ${err.message}`))
-            }
+        device.open((err) => {
+            if (err) {
+              console.error('Error al abrir conexión COM:', err)
+              return reject(new Error(`Error COM: ${err.message}`))
+            }
 
-            printer.raw(data)
-            printer.close()
-            
-            console.log('Datos enviados a COM correctamente.')
-            resolve({ ok: true, method: 'com' })
-        })
+            printer.raw(data)
+            printer.close()
+            
+            console.log('Datos enviados a COM correctamente.')
+            resolve({ ok: true, method: 'com' })
+        })
 
-        device.on('error', (err) => {
-            console.error('Error de Puerto Serial:', err)
-            reject(new Error(`Error Serial: ${err.message}`))
-        })
-      })
-    }
+        device.on('error', (err) => {
+            console.error('Error de Puerto Serial:', err)
+            reject(new Error(`Error Serial: ${err.message}`))
+        })
+      })
+    }
 
-    // --- CASO 3: Impresión por Sistema (USB, Auto) ---
-    // Usa 'electron-pos-printer' para hablar con la cola de Windows.
-    // Sirve para USB y para impresoras de Red (LAN) que ya están INSTALADAS en Windows.
-    else if (options.type === 'auto' || options.type === 'usb') {
-      console.log(`Printing via System (PosPrinter) (type: ${options.type})`)
-      let printerToUse = options.printer // Ej. "XP-80C" o "XP-80C (copy 1)"
+    // --- CASO 3: Impresión por Sistema (USB, Auto) ---
+    // Usa 'electron-pos-printer' para hablar con la cola de Windows.
+    // Sirve para USB y para impresoras de Red (LAN) que ya están INSTALADAS en Windows.
+    else if (options.type === 'auto' || options.type === 'usb') {
+      console.log(`Printing via System (PosPrinter) (type: ${options.type})`)
+      let printerToUse = options.printer // Ej. "XP-80C" o "XP-80C (copy 1)"
 
-      // Si no se seleccionó impresora (viene vacío), buscar la default
-      if (!printerToUse) {
-        console.log('No printer selected. Finding system default printer...')
-        try {
-          // ¡Corregido! Usa 'mainWindow', no 'win'
-          const printers = await mainWindow.webContents.getPrintersAsync() 
-          const defaultPrinter = printers.find(p => p.isDefault)
+      // Si no se seleccionó impresora (viene vacío), buscar la default
+      if (!printerToUse) {
+        console.log('No printer selected. Finding system default printer...')
+        try {
+          // ¡Corregido! Usa 'mainWindow', no 'win'
+          const printers = await mainWindow.webContents.getPrintersAsync() 
+          const defaultPrinter = printers.find(p => p.isDefault)
 
-          if (defaultPrinter) {
-            printerToUse = defaultPrinter.name
-            console.log('Using system default printer:', printerToUse)
-          } else {
-            throw new Error('No printer selected and no default printer found')
-          }
-        } catch (e) {
-          console.error('Error finding default printer:', e)
-          throw e 
-        }
-      }
+          if (defaultPrinter) {
+            printerToUse = defaultPrinter.name
+            console.log('Using system default printer:', printerToUse)
+          } else {
+            throw new Error('No printer selected and no default printer found')
+          }
+        } catch (e) {
+          console.error('Error finding default printer:', e)
+          throw e 
+        }
+      }
 
-      // Ahora llamamos a PosPrinter con el nombre de la impresora de Windows
-      console.log(`Sending to PosPrinter with printerName: "${printerToUse}"`)
-      await PosPrinter.print(
-        [{ type: 'raw', value: data }], 
-        {
-          printerName: printerToUse,
-          silent: true,
-        }
-      )
-      
-      return { ok: true, method: `system (${options.type})` }
-    }
-    
-    // --- CASO 4: Tipo desconocido ---
-    else {
-      throw new Error(`Tipo de impresora desconocido: ${options.type}`)
-    }
+      // Ahora llamamos a PosPrinter con el nombre de la impresora de Windows
+      console.log(`Sending to PosPrinter with printerName: "${printerToUse}"`)
+      await PosPrinter.print(
+        [{ type: 'raw', value: data }], 
+        {
+          printerName: printerToUse,
+          silent: true,
+        }
+      )
+      
+      return { ok: true, method: `system (${options.type})` }
+    }
+    
+    // --- CASO 4: Tipo desconocido ---
+    else {
+      throw new Error(`Tipo de impresora desconocido: ${options.type}`)
+    }
 
-  } catch (err) {
-    console.error('Error fatal en print-raw:', err.message, err)
-    // Devolvemos el error al frontend para que el usuario lo vea
-    return { ok: false, error: err.message }
-  }
+  } catch (err) {
+    console.error('Error fatal en print-raw:', err.message, err)
+    // Devolvemos el error al frontend para que el usuario lo vea
+    return { ok: false, error: err.message }
+  }
 })
