@@ -2,16 +2,19 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'pdf-to-printer'
-const { getPrinters} = pkg
+const { getPrinters } = pkg
 import usb from 'usb'
 import net from 'net'
-import { createRequire } from 'module'
+import { createRequire } from 'module' 
 
+const require = createRequire(import.meta.url)
+
+const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
+const escpos = require('escpos'); 
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const require = createRequire(import.meta.url)
-const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
+
 let mainWindow
 
 function createWindow() {
@@ -130,7 +133,7 @@ ipcMain.handle('printRaw', async (event, base64Data, options) => {
       if (!printerToUse) {
         console.log('No printer selected. Finding system default printer...')
         try {
-          const printers = await win.webContents.getPrintersAsync()
+          const printers = await mainWindow.webContents.getPrintersAsync()
           const defaultPrinter = printers.find(p => p.isDefault)
 
           if (defaultPrinter) {
