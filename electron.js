@@ -6,7 +6,8 @@ const { getPrinters } = pkg
 import usb from 'usb'
 import net from 'net'
 import { createRequire } from 'module' 
-
+import os from 'os'
+import net from 'net'
 const require = createRequire(import.meta.url)
 
 const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
@@ -99,25 +100,13 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
   })
 })
 
-/* ---------------------------------------------------
-   🧾 Imprimir datos crudos (RAW)
-   Soporta:
-   - type: "lan", "com", "auto"
-   - printer: nombre Windows
-   - ip / port / com / usb
---------------------------------------------------- */
-/* ---------------------------------------------------
-   🧾 Imprimir datos crudos (RAW)
-   Soporta:
-   - type: "lan", "com", "auto", "usb"
---------------------------------------------------- */
+
 ipcMain.handle('printRaw', async (event, base64Data, options) => {
   console.log('Handling print-raw call with options:', options)
   const data = Buffer.from(base64Data, 'base64')
 
   try {
-    // --- CASO 1: Impresión por LAN (IP) Directa ---
-    // Usa 'escpos' para hablar directo con la IP, ignorando Windows.
+
     if (options.type === 'lan') {
       console.log(`Printing via LAN (direct) to ${options.ip}:${options.port}`)
       if (!options.ip || !options.port) {
@@ -240,4 +229,70 @@ ipcMain.handle('printRaw', async (event, base64Data, options) => {
     // Devolvemos el error al frontend para que el usuario lo vea
     return { ok: false, error: err.message }
   }
+})
+
+/* ---------------------------------------------------
+   🔍 Descubrir impresoras LAN en el puerto 9100
+--------------------------------------------------- */
+ipcMain.handle('discover-lan-printers', async () => {
+  console.log('Iniciando escaneo de red para impresoras LAN...')
+  
+  // 1. Obtener la IP local y la subred
+  const interfaces = os.networkInterfaces()
+  let baseIp = ''
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        baseIp = iface.address.split('.').slice(0, 3).join('.') 
+        break
+      }
+    }
+    if (baseIp) break
+  }
+
+  if (!baseIp) {
+    console.error('No se pudo determinar la IP base de la red.')
+    return [] 
+  }
+
+  console.log(`Escaneando subred: ${baseIp}.xxx en el puerto 9100`)
+
+  const checkPort = (ip, port, timeout = 200) => {
+    return new Promise((resolve) => {
+      const socket = new net.Socket()
+      socket.setTimeout(timeout)
+      
+      socket.connect(port, ip, () => {
+        socket.destroy()
+        resolve(true)
+      })
+      
+      socket.on('error', () => resolve(false))
+      socket.on('timeout', () => {
+        socket.destroy()
+        resolve(false) 
+      })
+    })
+  }
+
+  const scanPromises = []
+  for (let i = 1; i <= 254; i++) {
+    const ip = `${baseIp}.${i}`
+    scanPromises.push(checkPort(ip, 9100))
+  }
+
+  const results = await Promise.allSettled(scanPromises)
+
+  const foundPrinters = []
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value === true) {
+      const ip = `${baseIp}.${index + 1}`
+      console.log(`¡Impresora encontrada en: ${ip}!`)
+      foundPrinters.push(ip)
+    }
+  })
+
+  console.log('Escaneo de red completado.')
+  return foundPrinters 
 })

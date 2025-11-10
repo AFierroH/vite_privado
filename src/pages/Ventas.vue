@@ -13,12 +13,33 @@
       <div class="flex items-center gap-2 ml-6">
         <label class="text-white">Tipo impresora:</label>
         <select v-model="printerType" class="p-2 rounded bg-[#081026] text-white">
-          <option value="auto">Auto</option>
-          <option value="lan">LAN (IP)</option>
-          <option value="usb">USB</option>
-          <option value="com">COM (serial)</option>
-        </select>
+        <option value="auto">Auto</option>
+        <option value="lan">LAN (IP)</option>
+        <option value="usb">USB</option>
+        <option value="com">COM (serial)</option>
+      </select>
+      
+      <div v-if="printerType === 'lan'" class="flex items-center gap-2">
+  <input 
+    v-model="printerInfo.ip" 
+    placeholder="Ej: 192.168.1.100" 
+    class="p-2 rounded bg-[#081026] text-white" />
+  <input 
+    v-model.number="printerInfo.port" 
+    type="number" 
+    class="p-2 w-20 rounded bg-[#081026] text-white" />
 
+  <button @click="discoverLan" :disabled="isScanningLan" class="px-3 py-2 bg-blue-600 rounded text-white">
+    {{ isScanningLan ? 'Buscando...' : 'Buscar' }}
+  </button>
+</div>
+
+      <div v-if="printerType === 'com'" class="flex items-center gap-2">
+        <input 
+          v-model="printerInfo.com" 
+          placeholder="Ej: COM3" 
+          class="p-2 rounded bg-[#081026] text-white" />
+      </div>
         <button @click="listPrinters" class="px-3 py-2 bg-[var(--accent)] rounded text-black">Listar</button>
         <button @click="listUsbDevices" class="px-3 py-2 bg-blue-500 rounded text-black">Detectar USB</button>
         <button @click="detectScanners" class="px-3 py-2 bg-gray-600 rounded text-black">Detectar escáneres</button>
@@ -87,7 +108,6 @@
         </div>
       </div>
 
-      <!-- CART + TICKET -->
       <div>
         <div class="p-4 bg-[var(--panel)] rounded mb-4">
           <h3 class="mb-2">Carrito</h3>
@@ -165,6 +185,8 @@ const ventaResult = ref(null)
 
 const printerType = ref('auto')
 const printerInfo = ref({ ip: '', port: 9100, usb: null, com: null })
+const isScanningLan = ref(false)
+
 const usbDevices = ref([])
 const connectedScanners = ref([])
 
@@ -350,7 +372,33 @@ async function redeemVoucher() {
     alert('Error al cargar voucher')
   }
 }
-
+async function discoverLan() {
+  if (isScanningLan.value) return
+  
+  isScanningLan.value = true
+  console.log('Iniciando descubrimiento LAN desde el frontend...')
+  
+  try {
+    // Llama a la nueva función de Electron
+    const ips = await window.electronAPI?.discoverLanPrinters?.()
+    
+    if (ips && ips.length > 0) {
+      console.log(`Impresoras encontradas: ${ips.join(', ')}`)
+      // Asigna automáticamente la primera impresora encontrada
+      printerInfo.value.ip = ips[0]
+      printerType.value = 'lan' // Cambia el tipo a LAN automáticamente
+      alert(`Impresora encontrada y configurada en: ${ips[0]}`)
+    } else {
+      console.log('No se encontraron impresoras LAN.')
+      alert('No se encontraron impresoras en la red (puerto 9100).')
+    }
+  } catch (err) {
+    console.error('Error en discoverLan:', err)
+    alert(`Error al buscar impresoras: ${err.message}`)
+  } finally {
+    isScanningLan.value = false
+  }
+}
 onMounted(() => {
   search()
   listPrinters()
