@@ -7,6 +7,8 @@ import usb from 'usb'
 import net from 'net'
 import { createRequire } from 'module' 
 import os from 'os'
+import arp from 'node-arp'
+
 const require = createRequire(import.meta.url)
 
 const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
@@ -89,7 +91,7 @@ Ping a impresora LAN por IP:9100
 ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
   return new Promise(resolve => {
     const socket = new net.Socket()
-    socket.setTimeout(800)
+    socket.setTimeout(5000)
     socket.connect(port, ip, () => {
       socket.destroy()
       resolve(true)
@@ -151,41 +153,59 @@ ipcMain.handle('printRaw', async (event, base64Data, options) => {
    Descubrir impresoras LAN en el puerto 9100
 --------------------------------------------------- */
 ipcMain.handle('discover-lan-printers', async () => {
-  const interfaces = os.networkInterfaces();
-  let baseIp = '';
+  console.log('Escaneando red para impresoras LAN (puerto 9100)...');
 
-  for (const name of Object.keys(interfaces)) {
+  const interfaces = os.networkInterfaces();
+  const baseIps = [];
+
+  // Detectar todas las subredes IPv4 activas
+  for (const name in interfaces) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        baseIp = iface.address.split('.').slice(0, 3).join('.');
-        break;
+        baseIps.push(iface.address.split('.').slice(0, 3).join('.'));
       }
     }
-    if (baseIp) break;
   }
 
-  if (!baseIp) return [];
-
-  const found = [];
-  const scanHost = (ip, port = 9100) => {
-    return new Promise(resolve => {
-      const socket = new net.Socket();
-      socket.setTimeout(400);
-      socket.connect(port, ip, () => {
-        found.push(ip);
-        socket.destroy();
-        resolve();
-      });
-      socket.on('error', () => resolve());
-      socket.on('timeout', () => { socket.destroy(); resolve(); });
-    });
-  };
-
-  const promises = [];
-  for (let i = 1; i <= 50; i++) { 
-    promises.push(scanHost(`${baseIp}.${i}`));
+  if (baseIps.length === 0) {
+    console.error('No se detectaron interfaces de red activas.');
+    return [];
   }
 
-  await Promise.all(promises);
-  return found;
+  const printers = [];
+
+  // Escanear cada red local (por si hay más de una)
+  for (const baseIp of baseIps) {
+    console.log(`Escaneando subred ${baseIp}.x`);
+    const scanPromises = [];
+
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${baseIp}.${i}`;
+      scanPromises.push(
+        new Promise((resolve) => {
+          const socket = new net.Socket();
+          socket.setTimeout(2000);
+
+          socket.once('connect', async () => {
+            socket.destroy();
+            // Si responde al puerto 9100, intentar obtener MAC
+            arp.getMAC(ip, (err, mac) => {
+              resolve({ ip, mac: err ? null : mac });
+            });
+          });
+
+          socket.once('error', () => resolve(null));
+          socket.once('timeout', () => { socket.destroy(); resolve(null); });
+
+          socket.connect(9100, ip);
+        })
+      );
+    }
+
+    const results = await Promise.all(scanPromises);
+    results.filter(Boolean).forEach(r => printers.push(r));
+  }
+
+  console.log(`Escaneo completo. ${printers.length} impresoras encontradas.`);
+  return printers;
 });
