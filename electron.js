@@ -104,7 +104,7 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
    - printer: nombre Windows
    - ip / port / com / usb
 --------------------------------------------------- */
-ipcMain.handle('print-raw', async (event, base64Data, options) => {
+ipcMain.handle('printRaw', async (event, base64Data, options) => {
   console.log('Handling print-raw call with options:', options)
   const data = Buffer.from(base64Data, 'base64')
 
