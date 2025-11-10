@@ -7,7 +7,6 @@ import usb from 'usb'
 import net from 'net'
 import { createRequire } from 'module' 
 import os from 'os'
-import net from 'net'
 const require = createRequire(import.meta.url)
 
 const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
@@ -102,197 +101,91 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
 
 
 ipcMain.handle('printRaw', async (event, base64Data, options) => {
-  console.log('Handling print-raw call with options:', options)
-  const data = Buffer.from(base64Data, 'base64')
+  const data = Buffer.from(base64Data, 'base64');
+  const { type = 'auto', ip, port = 9100, printer } = options;
 
   try {
-
-    if (options.type === 'lan') {
-      console.log(`Printing via LAN (direct) to ${options.ip}:${options.port}`)
-      if (!options.ip || !options.port) {
-        throw new Error('IP o Puerto no especificados para LAN')
-      }
-
-      // 'escpos' usa callbacks, así que lo envolvemos en una Promesa
-      return new Promise((resolve, reject) => {
-        const device = new escpos.Network(options.ip, options.port)
-        const printer = new escpos.Printer(device)
-
-        // Timeout por si la impresora no responde
-        const connectionTimeout = setTimeout(() => {
-            reject(new Error('Error: Timeout de conexión LAN (5s)'))
-            device.close() // Intenta cerrar
-        }, 5000)
-
-        device.open((err) => {
-            clearTimeout(connectionTimeout) // Éxito, limpiar timeout
-            if (err) {
-              console.error('Error al abrir conexión LAN:', err)
-              return reject(new Error(`Error LAN: ${err.message}`))
-            }
-            
-            printer.raw(data) // Envía los bytes crudos
-            printer.close() // Corta y cierra la conexión
-            
-            console.log('Datos enviados a LAN correctamente.')
-            resolve({ ok: true, method: 'lan' })
-        })
-
-        device.on('error', (err) => {
-            clearTimeout(connectionTimeout)
-            console.error('Error de Socket LAN:', err)
-            reject(new Error(`Error Socket: ${err.message}`))
-        })
-      })
+    if (type === 'lan' && ip) {
+      console.log(`Enviando datos a impresora LAN ${ip}:${port}`);
+      await new Promise((resolve, reject) => {
+        const socket = new net.Socket();
+        socket.connect(port, ip, () => {
+          socket.write(data, err => {
+            if (err) return reject(err);
+            socket.end();
+          });
+        });
+        socket.on('close', resolve);
+        socket.on('error', reject);
+        socket.setTimeout(3000, () => reject(new Error('Timeout de conexión')));
+      });
+      console.log('✅ Datos enviados por LAN correctamente.');
+      return { ok: true, method: 'lan' };
     }
 
-    // --- CASO 2: Impresión por COM (Serial) Directa ---
-    // Usa 'escpos' para hablar directo con el puerto COM.
-    else if (options.type === 'com') {
-      console.log(`Printing via COM (direct) to ${options.com}`)
-      if (!options.com) {
-        throw new Error('Puerto COM no especificado')
-      }
+    // Impresión por sistema (Windows)
+    if (type === 'usb' || type === 'auto') {
+      const { PosPrinter } = require('electron-pos-printer');
+      const printers = await mainWindow.webContents.getPrintersAsync();
+      const defaultPrinter = printers.find(p => p.isDefault);
+      const printerName = printer || defaultPrinter?.name;
 
-      return new Promise((resolve, reject) => {
-        // 9600 es el baudRate más común para impresoras térmicas
-        const device = new escpos.Serial(options.com, { baudRate: 9600 })
-        const printer = new escpos.Printer(device)
+      if (!printerName) throw new Error('No se encontró impresora del sistema');
 
-        device.open((err) => {
-            if (err) {
-              console.error('Error al abrir conexión COM:', err)
-              return reject(new Error(`Error COM: ${err.message}`))
-            }
-
-            printer.raw(data)
-            printer.close()
-            
-            console.log('Datos enviados a COM correctamente.')
-            resolve({ ok: true, method: 'com' })
-        })
-
-        device.on('error', (err) => {
-            console.error('Error de Puerto Serial:', err)
-            reject(new Error(`Error Serial: ${err.message}`))
-        })
-      })
-    }
-
-    // --- CASO 3: Impresión por Sistema (USB, Auto) ---
-    // Usa 'electron-pos-printer' para hablar con la cola de Windows.
-    // Sirve para USB y para impresoras de Red (LAN) que ya están INSTALADAS en Windows.
-    else if (options.type === 'auto' || options.type === 'usb') {
-      console.log(`Printing via System (PosPrinter) (type: ${options.type})`)
-      let printerToUse = options.printer // Ej. "XP-80C" o "XP-80C (copy 1)"
-
-      // Si no se seleccionó impresora (viene vacío), buscar la default
-      if (!printerToUse) {
-        console.log('No printer selected. Finding system default printer...')
-        try {
-          // ¡Corregido! Usa 'mainWindow', no 'win'
-          const printers = await mainWindow.webContents.getPrintersAsync() 
-          const defaultPrinter = printers.find(p => p.isDefault)
-
-          if (defaultPrinter) {
-            printerToUse = defaultPrinter.name
-            console.log('Using system default printer:', printerToUse)
-          } else {
-            throw new Error('No printer selected and no default printer found')
-          }
-        } catch (e) {
-          console.error('Error finding default printer:', e)
-          throw e 
-        }
-      }
-
-      // Ahora llamamos a PosPrinter con el nombre de la impresora de Windows
-      console.log(`Sending to PosPrinter with printerName: "${printerToUse}"`)
       await PosPrinter.print(
-        [{ type: 'raw', value: data }], 
-        {
-          printerName: printerToUse,
-          silent: true,
-        }
-      )
-      
-      return { ok: true, method: `system (${options.type})` }
-    }
-    
-    // --- CASO 4: Tipo desconocido ---
-    else {
-      throw new Error(`Tipo de impresora desconocido: ${options.type}`)
+        [{ type: 'raw', value: data }],
+        { printerName, silent: true }
+      );
+      return { ok: true, method: 'system' };
     }
 
+    return { ok: false, error: 'Tipo no soportado' };
   } catch (err) {
-    console.error('Error fatal en print-raw:', err.message, err)
-    // Devolvemos el error al frontend para que el usuario lo vea
-    return { ok: false, error: err.message }
+    console.error('Error en printRaw:', err);
+    return { ok: false, error: err.message };
   }
-})
+});
+
 
 /* ---------------------------------------------------
-   🔍 Descubrir impresoras LAN en el puerto 9100
+   Descubrir impresoras LAN en el puerto 9100
 --------------------------------------------------- */
 ipcMain.handle('discover-lan-printers', async () => {
-  console.log('Iniciando escaneo de red para impresoras LAN...')
-  
-  // 1. Obtener la IP local y la subred
-  const interfaces = os.networkInterfaces()
-  let baseIp = ''
+  const interfaces = os.networkInterfaces();
+  let baseIp = '';
 
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        baseIp = iface.address.split('.').slice(0, 3).join('.') 
-        break
+        baseIp = iface.address.split('.').slice(0, 3).join('.');
+        break;
       }
     }
-    if (baseIp) break
+    if (baseIp) break;
   }
 
-  if (!baseIp) {
-    console.error('No se pudo determinar la IP base de la red.')
-    return [] 
-  }
+  if (!baseIp) return [];
 
-  console.log(`Escaneando subred: ${baseIp}.xxx en el puerto 9100`)
-
-  const checkPort = (ip, port, timeout = 200) => {
-    return new Promise((resolve) => {
-      const socket = new net.Socket()
-      socket.setTimeout(timeout)
-      
+  const found = [];
+  const scanHost = (ip, port = 9100) => {
+    return new Promise(resolve => {
+      const socket = new net.Socket();
+      socket.setTimeout(400);
       socket.connect(port, ip, () => {
-        socket.destroy()
-        resolve(true)
-      })
-      
-      socket.on('error', () => resolve(false))
-      socket.on('timeout', () => {
-        socket.destroy()
-        resolve(false) 
-      })
-    })
+        found.push(ip);
+        socket.destroy();
+        resolve();
+      });
+      socket.on('error', () => resolve());
+      socket.on('timeout', () => { socket.destroy(); resolve(); });
+    });
+  };
+
+  const promises = [];
+  for (let i = 1; i <= 50; i++) { 
+    promises.push(scanHost(`${baseIp}.${i}`));
   }
 
-  const scanPromises = []
-  for (let i = 1; i <= 254; i++) {
-    const ip = `${baseIp}.${i}`
-    scanPromises.push(checkPort(ip, 9100))
-  }
-
-  const results = await Promise.allSettled(scanPromises)
-
-  const foundPrinters = []
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled' && result.value === true) {
-      const ip = `${baseIp}.${index + 1}`
-      console.log(`¡Impresora encontrada en: ${ip}!`)
-      foundPrinters.push(ip)
-    }
-  })
-
-  console.log('Escaneo de red completado.')
-  return foundPrinters 
-})
+  await Promise.all(promises);
+  return found;
+});
