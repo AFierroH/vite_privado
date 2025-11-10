@@ -2,12 +2,11 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'pdf-to-printer'
-const { getPrinters, print } = pkg
+const { getPrinters} = pkg
 import usb from 'usb'
-import SerialPort from 'serialport'
 import net from 'net'
-import fs from 'fs'
 import { createRequire } from 'module'
+const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
