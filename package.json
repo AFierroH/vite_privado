@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "tw:build": "npx @tailwindcss/cli -i ./src/style.css -o ./dist/output.css --minify",
     "build:electron": "vite build && electron-builder",
-    "rebuild": "electron-rebuild -f -w usb,escpos-usb"
+    "rebuild": "electron-rebuild -f -w usb,escpos-usb,node-printer"
   },
   "dependencies": {
     "@tailwindcss/cli": "^4.1.13",
@@ -23,6 +23,7 @@
     "escpos-usb": "^3.0.0-alpha.4",
     "iconv-lite": "^0.7.0",
     "node-arp": "^1.0.6",
+    "node-printer": "^1.0.4",
     "pdf-to-printer": "^5.6.1",
     "qz-tray": "^2.2.5",
     "serialport": "^13.0.0",

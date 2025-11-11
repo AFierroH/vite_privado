@@ -22,13 +22,12 @@
       <div v-if="printerType === 'lan'" class="flex items-center gap-2">
   <input 
     v-model="printerInfo.ip" 
-    placeholder="Ej: 192.168.1.100" 
+    placeholder="IP de la impresora" 
     class="p-2 rounded bg-[#081026] text-white" />
   <input 
     v-model.number="printerInfo.port" 
     type="number" 
     class="p-2 w-20 rounded bg-[#081026] text-white" />
-
   <button @click="discoverLan" :disabled="isScanningLan" class="px-3 py-2 bg-blue-600 rounded text-white">
     {{ isScanningLan ? 'Buscando...' : 'Buscar' }}
   </button>

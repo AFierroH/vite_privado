@@ -10,7 +10,7 @@ import arp from 'node-arp'
 
 const require = createRequire(import.meta.url)
 const usb = require('usb')
-
+const printer = require('node-printer')
 const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
 const escpos = require('escpos'); 
 
@@ -103,17 +103,15 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
 
 
 /* ---------------------------------------------------
- Imprimir datos crudos (RAW) - CORREGIDO
+ Imprimir datos crudos (RAW) 
 --------------------------------------------------- */
-
 ipcMain.handle('printRaw', async (event, base64Data, options) => {
   const data = Buffer.from(base64Data, 'base64');
-  const { type = 'auto', ip, port = 9100, printer } = options;
+  const { type = 'auto', ip, port = 9100, printer: printerName } = options;
 
-  console.log(`Intentando imprimir con tipo: "${type}", impresora: "${printer}"`);
+  console.log(`Intentando imprimir con tipo: "${type}", impresora: "${printerName}"`);
 
   try {
-    // --- CASO 1: LAN  ---
     if (type === 'lan' && ip) {
       console.log(`Enviando datos a impresora LAN ${ip}:${port}`);
       await new Promise((resolve, reject) => {
@@ -130,68 +128,38 @@ ipcMain.handle('printRaw', async (event, base64Data, options) => {
         socket.on('close', resolve);
         socket.on('error', reject);
       });
-      console.log('Datos enviados por LAN correctamente.');
+      console.log('Datos enviados por LAN (Socket) correctamente.');
       return { ok: true, method: 'lan' };
     }
 
-    // --- CASO 2: USB (Directo por Hardware - v3 API) ---
-    if (type === 'usb') {
-  console.log('Enviando datos por USB Directo (escpos v3)...');
-  
-  return new Promise((resolve, reject) => {
-    try {
-      const { Printer } = require('escpos');
-      const Usb = require('escpos-usb'); 
-
-      const usbDevice = Usb.findPrinter(); 
+    if (type === 'usb' || type === 'auto') {
       
-      if (!usbDevice) {
-        throw new Error('No se encontró ninguna impresora USB (escpos-usb). ¿Está conectada y encendida?');
+      if (!printerName) {
+        throw new Error('No se seleccionó ninguna impresora de la lista (printerName está vacío)');
       }
 
-      const adapter = new Usb(usbDevice); 
-      const printer = new Printer(adapter);
-
-      adapter.open((err) => {
-        if (err) {
-          console.error('Error al abrir USB (escpos-usb):', err);
-          return reject(new Error(`Error USB Directo: ${err.message}`));
-        }
+      console.log(`Enviando datos con node-printer a: "${printerName}"`);
+      
+      return new Promise((resolve, reject) => {
         
-        printer.raw(data).close(() => {
-          console.log('✅ Datos enviados por USB Directo correctamente.');
-          resolve({ ok: true, method: 'usb-direct' });
+        // El error "getPrinters is not a function" estaba aquí.
+        // Lo hemos eliminado y ahora enviamos la impresión directamente.
+
+        printer.printDirect({
+          data: data,
+          printer: printerName,
+          type: 'RAW',
+          
+          success: function(jobID) {
+            console.log(`Datos enviados a node-printer correctamente. Job ID: ${jobID}`);
+            resolve({ ok: true, method: 'node-printer' });
+          },
+          error: function(err) {
+            console.error('Error de node-printer:', err);
+            reject(new Error(`Error de node-printer: ${err.message}`));
+          }
         });
       });
-
-      adapter.on('error', (err) => {
-        console.error('Error de adaptador USB (escpos v3):', err);
-        reject(new Error(`Error USB: ${err.message}`));
-      });
-
-    } catch (err) {
-      console.error('Error al inicializar escpos.Usb (v3):', err);
-      reject(err);
-    }
-  });
-}
-
-    if (type === 'auto') {
-      console.log('Enviando datos por Sistema (PosPrinter)...');
-      const { PosPrinter } = require('electron-pos-printer');
-      
-      const printers = await mainWindow.webContents.getPrintersAsync();
-      const defaultPrinter = printers.find(p => p.isDefault);
-      const printerName = printer || defaultPrinter?.name;
-
-      if (!printerName) throw new Error('No se encontró impresora del sistema (tipo "auto")');
-      
-      console.log(`Usando impresora de sistema: "${printerName}"`);
-      await PosPrinter.print(
-        [{ type: 'raw', value: data }],
-        { printerName, silent: true }
-      );
-      return { ok: true, method: 'system' };
     }
 
     return { ok: false, error: `Tipo no soportado: "${type}"` };
