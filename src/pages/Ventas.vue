@@ -345,7 +345,7 @@ async function testPrint() {
     const options = { type: printerType.value, ip: printerInfo.value.ip, port: printerInfo.value.port }
     const result = await window.electronAPI.printRaw?.(base64Ticket, options)
     console.log("Resultado impresión:", result)
-    alert("✅ Ticket de prueba enviado a la impresora.")
+    alert("Ticket de prueba enviado a la impresora.")
   } catch (err) {
     console.error("Error al imprimir:", err)
     alert("Error al imprimir. Revisa consola.")
@@ -372,25 +372,29 @@ async function redeemVoucher() {
     alert('Error al cargar voucher')
   }
 }
+
 async function discoverLan() {
   if (isScanningLan.value) return
-  
   isScanningLan.value = true
-  console.log('Iniciando descubrimiento LAN desde el frontend...')
+  console.log('Iniciando descubrimiento LAN (FULL SCAN)...')
   
   try {
-    // Llama a la nueva función de Electron
-    const ips = await window.electronAPI?.discoverLanPrinters?.()
+
+    const scanOptions = {
+      fullScan: true,      
+      timeoutMs: 5000
+    }
+
+    const ips = await window.electronAPI?.discoverLanPrinters?.(scanOptions)
     
     if (ips && ips.length > 0) {
-      console.log(`Impresoras encontradas: ${ips.join(', ')}`)
-      // Asigna automáticamente la primera impresora encontrada
-      printerInfo.value.ip = ips[0]
-      printerType.value = 'lan' // Cambia el tipo a LAN automáticamente
-      alert(`Impresora encontrada y configurada en: ${ips[0]}`)
+      console.log(`Impresoras encontradas: ${ips.map(p => p.ip).join(', ')}`)
+      printerInfo.value.ip = ips[0].ip 
+      printerType.value = 'lan' 
+      alert(`Impresora encontrada y configurada en: ${ips[0].ip}`)
     } else {
       console.log('No se encontraron impresoras LAN.')
-      alert('No se encontraron impresoras en la red (puerto 9100).')
+      alert('No se encontraron impresoras en la red (puerto 9100). Revisa el firewall.')
     }
   } catch (err) {
     console.error('Error en discoverLan:', err)
@@ -408,5 +412,5 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* estilos mínimos */
+
 </style>

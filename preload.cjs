@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   detectScanners: () => ipcRenderer.invoke('detectScanners'),
   pingPrinter: (ip, port) => ipcRenderer.invoke('pingPrinter', ip, port),
   printRaw: (data, options) => ipcRenderer.invoke('printRaw', data, options),
+  discoverLanPrinters: (options) => ipcRenderer.invoke('discover-lan-printers', options),
 })
