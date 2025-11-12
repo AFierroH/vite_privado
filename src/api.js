@@ -2,7 +2,6 @@ import axios from 'axios'
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://147.182.245.46:3000/api'
 
-// Instancia global
 const api = axios.create({
   baseURL: API_URL,
   timeout: 10000,
@@ -66,4 +65,4 @@ export const getDestSchema = () => api.get('/import/dest-schema')
 export const previewMapping = (body) => api.post('/import/preview', body)
 export const processImport = (body) => api.post('/import/apply', body)
 
-export { api, API_URL }  
+export { api}  
