@@ -1,24 +1,28 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import pkg from 'pdf-to-printer'
-const { getPrinters } = pkg
 import net from 'net'
-import { createRequire } from 'module' 
+import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
 import os from 'os'
 import arp from 'node-arp'
+import fs from 'fs'
+import fsExtra from 'fs-extra'
+import PDFDocument from 'pdfkit'
+import iconv from 'iconv-lite'
+import pkg from 'pdf-to-printer'
+const { print, getPrinters } = pkg
+import path from 'path'
+
 
 const require = createRequire(import.meta.url)
-const usb = require('usb')
-const printer = require('node-printer')
-const { PosPrinter, PosPrintData, PosPrintOptions } = require('electron-pos-printer');
-const escpos = require('escpos'); 
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 let mainWindow
 
+/* ---------------------------------------------------
+ Crear ventana principal
+--------------------------------------------------- */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -30,8 +34,7 @@ function createWindow() {
     }
   })
 
-  // carga frontend o URL del backend remoto
-  const devUrl = 'http://147.182.245.46'
+  const devUrl = 'http://147.182.245.46' // tu frontend remoto
   mainWindow.loadURL(devUrl)
 }
 
@@ -41,6 +44,164 @@ app.on('window-all-closed', () => {
 })
 
 
+
+
+async function renderEscposToPdf(base64Data, outPath, opts = {}) {
+  const {
+    codepage = 'cp857', // cambia si necesitas cp437, cp857...
+    pageWidthPts = 226, // 80mm aprox = 3.1496in * 72 = 226 pts
+    pageHeightPts = 1200, // altura grande para no cortar (se puede ajustar)
+    margin = 8,
+    normalFontSize = 9,
+    doubleFontSize = 14
+  } = opts
+
+  const buf = Buffer.from(base64Data, 'base64')
+
+  // Creamos doc PDF
+  await fsExtra.ensureDir(path.dirname(outPath))
+  const doc = new PDFDocument({
+    size: [pageWidthPts, pageHeightPts],
+    margins: { top: margin, bottom: margin, left: margin, right: margin }
+  })
+  const stream = fs.createWriteStream(outPath)
+  doc.pipe(stream)
+
+  // Fuente monoespaciada incluida
+  const usableWidth = pageWidthPts - margin * 2
+
+  // estados
+  let align = 'left'
+  let bold = false
+  let doubleHW = false
+
+  // buffer temporal para colectar bytes de texto antes de decodificar
+  let textChunk = []
+
+  // helper: flush chunk -> escribe al PDF
+  function flushChunkAsText() {
+    if (!textChunk || textChunk.length === 0) return
+    const chunkBuf = Buffer.from(textChunk)
+    let text = iconv.decode(chunkBuf, codepage)
+    text = text.replace(/\r/g, '') // quitar CR si existieran
+
+    const font = bold ? 'Courier-Bold' : 'Courier'
+    const fontSize = doubleHW ? doubleFontSize : normalFontSize
+
+    doc.font(font).fontSize(fontSize)
+    doc.text(text, {
+      width: usableWidth,
+      align: align,
+      lineGap: doubleHW ? 2 : 0
+    })
+    textChunk = []
+  }
+
+  // Recorremos bytes e interpretamos comandos simples
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i]
+
+    // LF (line feed)
+    if (b === 0x0a) {
+      flushChunkAsText()
+      doc.moveDown(0) // ya movido por text newline
+      continue
+    }
+
+    // ESC sequences (0x1B ...)
+    if (b === 0x1B) {
+      // flush pending text
+      flushChunkAsText()
+      const next = buf[i + 1]
+      if (next === undefined) break
+
+      // ESC a n  -> align: 0 left, 1 center, 2 right
+      if (next === 0x61 && i + 2 < buf.length) {
+        const val = buf[i + 2]
+        align = val === 1 ? 'center' : val === 2 ? 'right' : 'left'
+        i += 2
+        continue
+      }
+
+      // ESC E n -> bold on/off
+      if (next === 0x45 && i + 2 < buf.length) {
+        const val = buf[i + 2]
+        bold = val === 1
+        i += 2
+        continue
+      }
+
+      // ESC d n -> print and feed n lines (we'll move down n)
+      if (next === 0x64 && i + 2 < buf.length) {
+        const n = buf[i + 2]
+        for (let k = 0; k < n; k++) doc.moveDown(0.5)
+        i += 2
+        continue
+      }
+
+      // ESC @ -> init / reset
+      if (next === 0x40) {
+        align = 'left'
+        bold = false
+        doubleHW = false
+        i += 1
+        continue
+      }
+
+      // otros, salta el ESC solo
+      i += 0
+      continue
+    }
+
+    // GS sequences (0x1D)
+    if (b === 0x1D) {
+      flushChunkAsText()
+      const next = buf[i + 1]
+      if (next === undefined) break
+
+      // GS ! n  -> char size (double height/width)
+      if (next === 0x21 && i + 2 < buf.length) {
+        const n = buf[i + 2]
+        // 0x11 era tu doble (ejemplo). Aquí detectamos si bit para doble.
+        // Consideramos n === 0x11 => doble alto+ancho
+        doubleHW = n === 0x11
+        i += 2
+        continue
+      }
+
+      // GS V m -> corte (m puede tener valor)
+      if (next === 0x56 && i + 2 < buf.length) {
+        // draw line + espacio
+        doc.moveDown(0.2)
+        doc.font('Courier').fontSize(normalFontSize).text('-'.repeat(32), { align: 'center', width: usableWidth })
+        doc.moveDown(1)
+        i += 2
+        continue
+      }
+
+      i += 0
+      continue
+    }
+
+    // Si llegamos acá: byte normal -> meter al textChunk
+    textChunk.push(b)
+  }
+
+  // flush restante
+  flushChunkAsText()
+
+  // finalizamos
+  doc.end()
+  await new Promise((res, rej) => {
+    stream.on('finish', res)
+    stream.on('error', rej)
+  })
+  return outPath
+}
+
+/* ---------------------------------------------------
+ Listar impresoras del sistema
+--------------------------------------------------- */
 ipcMain.handle('listSystemPrinters', async () => {
   try {
     const list = await getPrinters()
@@ -52,41 +213,7 @@ ipcMain.handle('listSystemPrinters', async () => {
 })
 
 /* ---------------------------------------------------
-Listar dispositivos USB conectados
---------------------------------------------------- */
-ipcMain.handle('listUsbDevices', async () => {
-  try {
-    const devices = usb.getDeviceList().map(d => ({
-      vendorId: d.deviceDescriptor.idVendor,
-      productId: d.deviceDescriptor.idProduct
-    }))
-    return devices
-  } catch (err) {
-    console.error('Error listUsbDevices:', err)
-    return []
-  }
-})
-
-/* ---------------------------------------------------
-Detectar escáneres (USB imaging devices)
---------------------------------------------------- */
-ipcMain.handle('detectScanners', async () => {
-  try {
-    const scanners = usb.getDeviceList().filter(
-      d => d.deviceDescriptor.bDeviceClass === 0x0e
-    )
-    return scanners.map(s => ({
-      vendorId: s.deviceDescriptor.idVendor,
-      productId: s.deviceDescriptor.idProduct
-    }))
-  } catch (err) {
-    console.error('detectScanners error', err)
-    return []
-  }
-})
-
-/* ---------------------------------------------------
-Ping a impresora LAN por IP:9100
+ Ping a impresora LAN por IP:9100
 --------------------------------------------------- */
 ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
   return new Promise(resolve => {
@@ -101,78 +228,66 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
   })
 })
 
-
 /* ---------------------------------------------------
- Imprimir datos crudos (RAW) 
+ Imprimir datos RAW (USB, LAN o Sistema)
 --------------------------------------------------- */
-ipcMain.handle('printRaw', async (event, base64Data, options) => {
-  const data = Buffer.from(base64Data, 'base64');
-  const { type = 'auto', ip, port = 9100, printer: printerName } = options;
 
-  console.log(`Intentando imprimir con tipo: "${type}", impresora: "${printerName}"`);
+ipcMain.handle('printRaw', async (event, base64Data, options) => {
+  const data = Buffer.from(base64Data, 'base64') 
+  const { type = 'auto', ip, port = 9100, printer, usePdfForLan = true } = options
 
   try {
-    if (type === 'lan' && ip) {
-      console.log(`Enviando datos a impresora LAN ${ip}:${port}`);
+    if (type === 'lan' && usePdfForLan) {
+      const tmp = path.join(process.env.TEMP || __dirname, `ticket_${Date.now()}.pdf`)
+      await renderEscposToPdf(base64Data, tmp, { codepage: 'cp858' })
+      await print(tmp, { printer: printer || null, silent: true })
+      fs.unlink(tmp, () => {})
+      return { ok: true, method: 'lan-pdf' }
+    }
+
+    if (type === 'usb') {
+      const tmp = path.join(process.env.TEMP || __dirname, `ticket_${Date.now()}.pdf`)
+      await renderEscposToPdf(base64Data, tmp, { codepage: 'cp858' })
+      await print(tmp, { printer: printer || null, silent: true })
+      fs.unlink(tmp, () => {})
+      return { ok: true, method: 'usb-pdf' }
+    }
+
+    if (type === 'lan' && ip && !usePdfForLan) {
       await new Promise((resolve, reject) => {
-        const socket = new net.Socket();
-        socket.setTimeout(5000, () => reject(new Error('Timeout de conexión LAN')));
-        
+        const socket = new net.Socket()
+        socket.setTimeout(5000, () => reject(new Error('Timeout de conexión LAN')))
         socket.connect(port, ip, () => {
           socket.write(data, (err) => {
-            if (err) return reject(err);
-            socket.end();
-          });
-        });
-        
-        socket.on('close', resolve);
-        socket.on('error', reject);
-      });
-      console.log('Datos enviados por LAN (Socket) correctamente.');
-      return { ok: true, method: 'lan' };
+            if (err) return reject(err)
+            socket.end()
+          })
+        })
+        socket.on('close', resolve)
+        socket.on('error', reject)
+      })
+      return { ok: true, method: 'lan-raw' }
     }
 
-    if (type === 'usb' || type === 'auto') {
-      
-      if (!printerName) {
-        throw new Error('No se seleccionó ninguna impresora de la lista (printerName está vacío)');
-      }
-
-      console.log(`Enviando datos con node-printer a: "${printerName}"`);
-      
-      return new Promise((resolve, reject) => {
-        
-        // El error "getPrinters is not a function" estaba aquí.
-        // Lo hemos eliminado y ahora enviamos la impresión directamente.
-
-        printer.printDirect({
-          data: data,
-          printer: printerName,
-          type: 'RAW',
-          
-          success: function(jobID) {
-            console.log(`Datos enviados a node-printer correctamente. Job ID: ${jobID}`);
-            resolve({ ok: true, method: 'node-printer' });
-          },
-          error: function(err) {
-            console.error('Error de node-printer:', err);
-            reject(new Error(`Error de node-printer: ${err.message}`));
-          }
-        });
-      });
+    // auto (usa sistema - mantiene lo que tenías)
+    if (type === 'auto') {
+      const { PosPrinter } = require('electron-pos-printer')
+      const printersList = await mainWindow.webContents.getPrintersAsync()
+      const defaultPrinter = printersList.find(p => p.isDefault)
+      const printerName = printer || defaultPrinter?.name
+      if (!printerName) throw new Error('No se encontró impresora del sistema (tipo "auto")')
+      await PosPrinter.print([{ type: 'raw', value: data }], { printerName, silent: true })
+      return { ok: true, method: 'system' }
     }
 
-    return { ok: false, error: `Tipo no soportado: "${type}"` };
-
+    return { ok: false, error: `Tipo no soportado: "${type}"` }
   } catch (err) {
-    console.error('Error fatal en printRaw:', err.message);
-    return { ok: false, error: err.message };
+    console.error('Error fatal en printRaw:', err)
+    return { ok: false, error: err.message || String(err) }
   }
-});
-
-
+})
 /* ---------------------------------------------------
-   Descubrir impresoras LAN en el puerto 9100
+ Descubrir impresoras LAN (puerto 9100)
 --------------------------------------------------- */
 ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
   const startTs = Date.now()
@@ -199,7 +314,7 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
 
   extraBases.forEach(b => {
     const parts = b.split('.')
-    if (parts.length === 4) localBases.add(parts.slice(0,3).join('.'))
+    if (parts.length === 4) localBases.add(parts.slice(0, 3).join('.'))
     else if (parts.length === 3) localBases.add(b)
   })
 
@@ -209,8 +324,7 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
     return []
   }
 
-
-  const tasks = [] 
+  const tasks = []
   const pushRangeForBase = (base) => {
     const start = 1, end = fullScan ? 254 : (perBaseLimit || 50)
     for (let i = start; i <= end; i++) {
@@ -220,10 +334,14 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
 
   for (const base of bases) pushRangeForBase(base)
 
-
   if (probeIpFirst) {
     const normalized = probeIpFirst.trim()
-    if (!tasks.some(t => t.ip === normalized)) tasks.unshift({ ip: normalized, base: normalized.split('.').slice(0,3).join('.') })
+    if (!tasks.some(t => t.ip === normalized)) {
+      tasks.unshift({
+        ip: normalized,
+        base: normalized.split('.').slice(0, 3).join('.')
+      })
+    }
   }
 
   const checkPortOpen = (ip, port, timeout = timeoutMs) => {
@@ -259,10 +377,9 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
       try {
         const ok = await checkPortOpen(ip, p)
         if (ok) openPorts.push(p)
-      } catch (e) {
-        // ignorar
-      }
+      } catch {}
     }
+
     if (openPorts.length > 0) {
       const mac = await getMac(ip)
       resultsMap.set(ip, { ip, mac, openPorts })
@@ -271,19 +388,19 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
 
   const workers = []
   const total = tasks.length
-  const startLogInterval = Date.now()
 
   const launcher = async () => {
     while (idx < total) {
       if (active >= concurrency) {
-
         await new Promise(r => setTimeout(r, 10))
         continue
       }
       const task = tasks[idx++]
       active++
 
-      const p = runTask(task).catch(e => console.error('task-run error', e)).finally(() => { active-- })
+      const p = runTask(task)
+        .catch(e => console.error('task-run error', e))
+        .finally(() => { active-- })
       workers.push(p)
     }
 
@@ -297,7 +414,6 @@ ipcMain.handle('discover-lan-printers', async (event, options = {}) => {
   }
 
   const results = Array.from(resultsMap.values())
-
   const elapsed = Date.now() - startTs
   console.log(`discover-lan-printers: escaneo terminado en ${elapsed}ms, encontrados: ${results.length}`)
   return results
