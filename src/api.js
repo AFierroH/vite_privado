@@ -66,4 +66,4 @@ export const getDestSchema = () => api.get('/import/dest-schema')
 export const previewMapping = (body) => api.post('/import/preview', body)
 export const processImport = (body) => api.post('/import/apply', body)
 
-export { api }  
+export { api, API_URL }  

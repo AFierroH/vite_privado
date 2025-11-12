@@ -6,7 +6,11 @@
     <section class="mb-6 p-4 border rounded">
       <label class="block mb-2 font-medium">1) Subir archivo .sql</label>
       <input type="file" accept=".sql" @change="onFileChange" />
-      <button class="ml-2 px-3 py-1 bg-blue-600 text-white rounded" @click="upload" :disabled="!file">
+      <button
+        class="ml-2 px-3 py-1 bg-blue-600 text-white rounded"
+        @click="upload"
+        :disabled="!file"
+      >
         Subir
       </button>
       <div v-if="uploadId" class="mt-2 text-sm text-green-700">
@@ -95,22 +99,14 @@
             <table class="w-full table-auto text-sm">
               <thead>
                 <tr>
-                  <th
-                    v-for="h in previewHeader"
-                    :key="h"
-                    class="border px-2 py-1"
-                  >
+                  <th v-for="h in previewHeader" :key="h" class="border px-2 py-1">
                     {{ h }}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(r, idx) in previewResult.preview" :key="idx">
-                  <td
-                    v-for="h in previewHeader"
-                    :key="h"
-                    class="border px-2 py-1"
-                  >
+                  <td v-for="h in previewHeader" :key="h" class="border px-2 py-1">
                     {{ r[h] ?? '' }}
                   </td>
                 </tr>
@@ -156,23 +152,16 @@ function onFileChange(e: Event) {
 
 async function upload() {
   if (!file.value) return alert('Selecciona un archivo .sql')
-
   try {
-    const form = new FormData()
-    form.append('file', file.value)
-
-    const { data } = await api.post('/import/upload-sql', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-
+    const { data } = await api.uploadSql(file.value)
     if (!data.uploadId) throw new Error('No se recibió uploadId')
 
     uploadId.value = data.uploadId
 
-    const parsedResp = await api.get(`/import/parsed/${data.uploadId}`)
+    const parsedResp = await api.getParsed(data.uploadId)
     parsedTables.value = parsedResp.data
 
-    const schemaResp = await api.get('/import/dest-schema')
+    const schemaResp = await api.getDestSchema()
     destSchema.value = schemaResp.data
 
     alert('Archivo subido y parseado correctamente')
@@ -215,7 +204,7 @@ async function preview() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await api.post('/import/preview', {
+    const { data } = await api.previewMapping({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
@@ -243,7 +232,7 @@ async function finalizeImport() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await api.post('/import/apply', {
+    const { data } = await api.processImport({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
