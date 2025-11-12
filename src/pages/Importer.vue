@@ -135,7 +135,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import api from '../api/'
+import * as api from '../api/'
 
 const file = ref<File | null>(null)
 const uploadId = ref<string | null>(null)
