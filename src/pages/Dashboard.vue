@@ -1,33 +1,34 @@
-<!-- Dashboard: mezcla tarjetas y mini-gráficos, entry point del panel -->
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 text-[var(--text-primary)]">
     <div class="lg:col-span-2">
-      <div class="p-4 bg-[var(--panel)] rounded shadow mb-6">
+      <div class="p-4 bg-[var(--panel)] rounded-lg shadow mb-6">
         <h3 class="text-lg font-semibold mb-2">Ventas - Últimos 7 días</h3>
         <canvas ref="mainChart" style="height:300px"></canvas>
       </div>
-      <div class="p-4 bg-[var(--panel)] rounded shadow">
+      <div class="p-4 bg-[var(--panel)] rounded-lg shadow">
         <h3 class="text-lg font-semibold mb-2">Top productos</h3>
-        <!-- simple tabla -->
-        <div v-for="p in top" :key="p.id" class="flex justify-between py-2 border-b border-gray-800">
-          <div>{{p.nombre}}</div><div>{{p.unidades}}</div>
+        
+        <div class="max-h-64 overflow-y-auto">
+          <div v-for="p in top" :key="p.id" class="flex justify-between py-2 border-b border-[var(--border)]">
+            <div>{{p.nombre}}</div>
+            <div class="text-[var(--muted)]">{{p.unidades}}</div>
+          </div>
         </div>
       </div>
     </div>
 
     <div>
-      <div class="p-4 bg-[var(--panel)] rounded shadow mb-4">
+      <div class="p-4 bg-[var(--panel)] rounded-lg shadow mb-4">
         <div class="text-sm text-[var(--muted)]">Ventas Hoy</div>
         <div class="text-2xl font-bold mt-2">$ {{totales.hoy}}</div>
       </div>
-      <div class="p-4 bg-[var(--panel)] rounded shadow">
+      <div class="p-4 bg-[var(--panel)] rounded-lg shadow">
         <div class="text-sm text-[var(--muted)]">Ticket Promedio</div>
         <div class="text-xl font-semibold mt-2">${{totales.ticket}}</div>
       </div>
     </div>
   </div>
 </template>
-
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import Chart from 'chart.js/auto'

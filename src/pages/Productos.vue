@@ -1,54 +1,57 @@
 <template>
-  <div>
+  <div class="h-full text-[var(--text-primary)]">
     <div class="mb-4 flex justify-between items-center">
       <h2 class="text-xl font-semibold">Productos</h2>
-      <button @click="abrirModal()" class="bg-[var(--accent)] px-3 py-2 rounded text-black">
+      <button @click="abrirModal()" class="bg-[var(--accent)] px-3 py-2 rounded-lg text-[var(--text-on-accent)]">
         Nuevo Producto
       </button>
     </div>
 
-    <div class="bg-[var(--panel)] p-4 rounded">
+    <div class="bg-[var(--panel)] p-4 rounded-lg">
       <input
         v-model="q"
         @input="load"
         placeholder="Buscar..."
-        class="w-full p-2 bg-[#081026] rounded text-white mb-4"
+        class="w-full p-2 bg-[var(--bg-deep)] rounded-lg text-[var(--text-primary)] border border-[var(--border)] mb-4"
       />
 
       <div v-if="productos.length === 0" class="text-[var(--muted)] text-center py-4">
         No hay productos registrados.
       </div>
 
-      <div
-        v-for="p in productos"
-        :key="p.id_producto"
-        class="flex justify-between border-b border-gray-800 py-2 items-center"
-      >
-        <div>
-          <div class="font-semibold">{{ p.nombre }}</div>
-          <div class="text-sm text-[var(--muted)]">Stock: {{ p.stock }} | ${{ p.precio }}</div>
-        </div>
+      <!-- Contenedor de la lista con scroll -->
+      <div class="max-h-[calc(100vh-280px)] overflow-y-auto">
+        <div
+          v-for="p in productos"
+          :key="p.id_producto"
+          class="flex justify-between border-b border-[var(--border)] py-2 items-center"
+        >
+          <div>
+            <div class="font-semibold">{{ p.nombre }}</div>
+            <div class="text-sm text-[var(--muted)]">Stock: {{ p.stock }} | ${{ p.precio }}</div>
+          </div>
 
-        <div class="flex gap-2">
-          <button @click="agregarStock(p.id_producto)" class="px-2 py-1 bg-green-600 text-white rounded">+1</button>
-          <button @click="quitarStock(p.id_producto)" class="px-2 py-1 bg-yellow-600 text-white rounded">-1</button>
-          <button @click="editarProducto(p)" class="px-2 py-1 bg-blue-600 text-white rounded">Editar</button>
-          <button @click="eliminarProducto(p.id_producto)" class="px-2 py-1 bg-red-600 text-white rounded">X</button>
+          <div class="flex gap-2">
+            <button @click="agregarStock(p.id_producto)" class="px-2 py-1 bg-green-600 text-white rounded-md text-xs">+1</button>
+            <button @click="quitarStock(p.id_producto)" class="px-2 py-1 bg-yellow-600 text-white rounded-md text-xs">-1</button>
+            <button @click="editarProducto(p)" class="px-2 py-1 bg-blue-600 text-white rounded-md text-xs">Editar</button>
+            <button @click="eliminarProducto(p.id_producto)" class="px-2 py-1 bg-red-600 text-white rounded-md text-xs">X</button>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- MODAL NUEVO / EDITAR -->
-    <div v-if="mostrarModal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center">
-      <div class="bg-[var(--panel)] p-6 rounded shadow w-[400px]">
+    <div v-if="mostrarModal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+      <div class="bg-[var(--panel)] p-6 rounded-lg shadow-xl w-full max-w-md">
         <h3 class="text-lg font-semibold mb-3">{{ productoActual.id_producto ? 'Editar' : 'Nuevo' }} Producto</h3>
         <form @submit.prevent="guardarProducto">
-          <input v-model="productoActual.nombre" placeholder="Nombre" class="w-full p-2 mb-2 rounded bg-[#081026] text-white" />
-          <input v-model.number="productoActual.precio" placeholder="Precio" type="number" class="w-full p-2 mb-2 rounded bg-[#081026] text-white" />
-          <input v-model.number="productoActual.stock" placeholder="Stock" type="number" class="w-full p-2 mb-2 rounded bg-[#081026] text-white" />
-          <div class="flex justify-end gap-2">
-            <button type="button" @click="cerrarModal" class="px-3 py-1 bg-gray-600 text-white rounded">Cancelar</button>
-            <button type="submit" class="px-3 py-1 bg-[var(--accent)] text-black rounded">Guardar</button>
+          <input v-model="productoActual.nombre" placeholder="Nombre" class="w-full p-2 mb-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]" />
+          <input v-model.number="productoActual.precio" placeholder="Precio" type="number" class="w-full p-2 mb-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]" />
+          <input v-model.number="productoActual.stock" placeholder="Stock" type="number" class="w-full p-2 mb-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]" />
+          <div class="flex justify-end gap-2 mt-4">
+            <button type="button" @click="cerrarModal" class="px-3 py-1 bg-gray-600 text-white rounded-lg">Cancelar</button>
+            <button type="submit" class="px-3 py-1 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg">Guardar</button>
           </div>
         </form>
       </div>

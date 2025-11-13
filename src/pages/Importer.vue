@@ -1,33 +1,34 @@
 <template>
-  <div class="p-6 max-w-6xl mx-auto">
+  <!-- Este div ahora toma el alto completo (h-full) y gestiona su layout con flex -->
+  <div class="h-full flex flex-col text-[var(--text-primary)]">
     <h1 class="text-2xl font-bold mb-4">Importador - Mapear tablas</h1>
 
-    <!-- Subir archivo -->
-    <section class="mb-6 p-4 border rounded">
+    <!-- Sección 1: Subir archivo -->
+    <section class="mb-6 p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
       <label class="block mb-2 font-medium">1) Subir archivo .sql</label>
-      <input type="file" accept=".sql" @change="onFileChange" />
+      <input type="file" accept=".sql" @change="onFileChange" class="text-sm" />
       <button
-        class="ml-2 px-3 py-1 bg-blue-600 text-white rounded"
+        class="ml-2 px-3 py-1 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg text-sm"
         @click="upload"
         :disabled="!file"
       >
         Subir
       </button>
-      <div v-if="uploadId" class="mt-2 text-sm text-green-700">
+      <div v-if="uploadId" class="mt-2 text-sm text-green-400">
         Upload ID: {{ uploadId }}
       </div>
     </section>
 
-    <!-- Seleccionar tablas -->
-    <section v-if="parsedTables.length" class="mb-6 p-4 border rounded">
+    <!-- Sección 2: Mapeo (solo si hay tablas) -->
+    <section v-if="parsedTables.length" class="flex-1 flex flex-col mb-6 p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg overflow-hidden">
       <label class="block mb-2 font-medium">2) Elegir tablas</label>
 
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium">Tabla destino (mi BD)</label>
+          <label class="block text-sm font-medium mb-1">Tabla destino (mi BD)</label>
           <select
             v-model="selectedDestTable"
-            class="w-full p-2 border rounded text-black bg-white"
+            class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
             @change="onDestChange"
           >
             <option value="">-- elegir tabla destino --</option>
@@ -36,12 +37,11 @@
             </option>
           </select>
         </div>
-
         <div>
-          <label class="block text-sm font-medium">Tabla origen (archivo importado)</label>
+          <label class="block text-sm font-medium mb-1">Tabla origen (archivo importado)</label>
           <select
             v-model="selectedSourceTable"
-            class="w-full p-2 border rounded text-black bg-white"
+            class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
             @change="onSourceChange"
           >
             <option value="">-- elegir tabla origen --</option>
@@ -53,18 +53,18 @@
       </div>
 
       <!-- Mapeo -->
-      <div v-if="selectedDestTable && selectedSourceTable" class="mt-4">
+      <div v-if="selectedDestTable && selectedSourceTable" class="mt-4 flex-1 flex flex-col overflow-hidden">
         <h3 class="font-semibold">3) Mapear columnas</h3>
-        <div class="mt-2 space-y-2">
+        <div class="mt-2 space-y-2 overflow-y-auto pr-2">
           <div
             v-for="destField in destSchema[selectedDestTable]"
             :key="destField"
             class="flex gap-2 items-center"
           >
-            <div class="w-48 font-medium">{{ destField }}</div>
+            <div class="w-48 font-medium text-sm text-[var(--muted)]">{{ destField }}</div>
             <select
               v-model="mapping[destField]"
-              class="flex-1 p-2 border rounded text-black bg-white"
+              class="flex-1 p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
             >
               <option value="">-- no asignado --</option>
               <option value="__skip">-- SKIP --</option>
@@ -77,36 +77,36 @@
               <input
                 v-model="staticValues[destField]"
                 placeholder="valor estático"
-                class="p-1 border rounded text-black bg-white"
+                class="p-2 w-32 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
               />
             </div>
           </div>
         </div>
 
         <div class="mt-4 flex gap-2">
-          <button class="px-4 py-2 bg-green-600 text-white rounded" @click="preview">
+          <button class="px-4 py-2 bg-green-600 text-white rounded-lg" @click="preview">
             Previsualizar
           </button>
-          <button class="px-4 py-2 bg-indigo-600 text-white rounded" @click="finalizeImport">
+          <button class="px-4 py-2 bg-blue-600 text-white rounded-lg" @click="finalizeImport">
             Importar (simulado)
           </button>
         </div>
 
         <!-- Preview -->
-        <div v-if="previewResult" class="mt-4 p-3 border rounded bg-gray-50">
+        <div v-if="previewResult" class="mt-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] flex-1 overflow-auto">
           <h4 class="font-semibold mb-2">Previsualización</h4>
           <div class="overflow-x-auto">
             <table class="w-full table-auto text-sm">
               <thead>
-                <tr>
-                  <th v-for="h in previewHeader" :key="h" class="border px-2 py-1">
+                <tr class="bg-[var(--panel)]">
+                  <th v-for="h in previewHeader" :key="h" class="border border-[var(--border)] px-2 py-1">
                     {{ h }}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(r, idx) in previewResult.preview" :key="idx">
-                  <td v-for="h in previewHeader" :key="h" class="border px-2 py-1">
+                  <td v-for="h in previewHeader" :key="h" class="border border-[var(--border)] px-2 py-1">
                     {{ r[h] ?? '' }}
                   </td>
                 </tr>
@@ -118,11 +118,11 @@
     </section>
 
     <!-- Tablas detectadas -->
-    <section v-if="parsedTables.length" class="p-4 border rounded">
+    <section v-if="parsedTables.length" class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
       <h2 class="font-semibold mb-2">Tablas detectadas</h2>
-      <ul>
+      <ul class="text-sm">
         <li v-for="t in parsedTables" :key="t.name" class="mb-2">
-          <strong>{{ t.name }}</strong> — {{ t.columns.join(', ') }}
+          <strong>{{ t.name }}</strong> — <span class="text-[var(--muted)]">{{ t.columns.join(', ') }}</span>
         </li>
       </ul>
     </section>
@@ -131,7 +131,13 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import * as api from '../api/'
+import {
+  uploadSql,
+  getParsed,
+  getDestSchema,
+  previewMapping,
+  processImport
+} from '../api/'
 
 const file = ref<File | null>(null)
 const uploadId = ref<string | null>(null)
@@ -152,16 +158,16 @@ function onFileChange(e: Event) {
 
 async function upload() {
   if (!file.value) return alert('Selecciona un archivo .sql')
+
   try {
-    const { data } = await api.uploadSql(file.value)
+    const { data } = await uploadSql(file.value)
     if (!data.uploadId) throw new Error('No se recibió uploadId')
 
     uploadId.value = data.uploadId
-
-    const parsedResp = await api.getParsed(data.uploadId)
+    const parsedResp = await getParsed(data.uploadId)
     parsedTables.value = parsedResp.data
 
-    const schemaResp = await api.getDestSchema()
+    const schemaResp = await getDestSchema()
     destSchema.value = schemaResp.data
 
     alert('Archivo subido y parseado correctamente')
@@ -204,7 +210,7 @@ async function preview() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await api.previewMapping({
+    const { data } = await previewMapping({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
@@ -232,7 +238,7 @@ async function finalizeImport() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await api.processImport({
+    const { data } = await processImport({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
