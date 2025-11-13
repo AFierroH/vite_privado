@@ -1,50 +1,108 @@
-<!-- Página completa de estadísticas con controls dinámicos -->
 <template>
-  <div>
-    <div class="flex gap-4 mb-4">
-      <button v-for="t in ['7d','30d','90d']" :key="t" @click="setRange(t)" :class="['px-3 py-2 rounded', range===t? 'bg-[var(--accent)] text-black':'bg-[#0b1220] text-[var(--muted)]']">{{t}}</button>
-      <div class="ml-auto">
-        <label class="text-sm text-[var(--muted)] mr-2">Mostrar</label>
-        <label class="inline-flex items-center"><input type="checkbox" v-model="visible.line1" class="mr-2">Linea A</label>
-        <label class="inline-flex items-center ml-2"><input type="checkbox" v-model="visible.line2" class="mr-2">Linea B</label>
-        <label class="inline-flex items-center ml-2"><input type="checkbox" v-model="visible.line3" class="mr-2">Linea C</label>
-      </div>
+  <div class="space-y-6">
+    <!-- Controles -->
+    <div class="flex gap-4 items-center">
+      <button
+        v-for="t in ['7d', '30d', '90d']"
+        :key="t"
+        @click="setRange(t)"
+        :class="[
+          'px-3 py-2 rounded transition',
+          range === t ? 'bg-[var(--accent)] text-black' : 'bg-[#0b1220] text-[var(--muted)]'
+        ]">
+        {{ t }}
+      </button>
+
+      <select v-model="categoriaFiltro" class="ml-auto bg-[#0b1220] border border-gray-700 px-2 py-1 rounded text-[var(--muted)]">
+        <option value="">Todas las categorías</option>
+        <option v-for="c in categorias" :key="c.categoria" :value="c.categoria">{{ c.categoria }}</option>
+      </select>
     </div>
 
+    <!-- Gráfico de ventas -->
     <div class="p-4 bg-[var(--panel)] rounded shadow">
-      <canvas ref="statsChart" style="height:360px"></canvas>
+      <canvas ref="statsChart" height="360"></canvas>
+    </div>
+
+    <!-- Productos top -->
+    <div class="bg-[var(--panel)] p-4 rounded shadow">
+      <h3 class="text-lg font-semibold mb-3 text-[var(--text-primary)]">Productos más vendidos 🏆</h3>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-[var(--muted)] border-b border-gray-700">
+            <th class="text-left p-2">Producto</th>
+            <th class="text-right p-2">Cantidad</th>
+            <th class="text-right p-2">Ingresos</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in productos" :key="p.nombre" class="border-b border-gray-800">
+            <td class="p-2">{{ p.nombre }}</td>
+            <td class="p-2 text-right">{{ p.total_vendido }}</td>
+            <td class="p-2 text-right">${{ p.ingreso.toLocaleString() }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import Chart from 'chart.js/auto'
+import axios from 'axios'
 
-const statsChart = ref(null)
 const range = ref('7d')
-const visible = ref({ line1:true, line2:true, line3:true })
+const categoriaFiltro = ref('')
+const categorias = ref([])
+const productos = ref([])
+const ventasPorDia = ref([])
+const statsChart = ref(null)
 let chartInstance = null
 
-function buildData(){
-  const labels = Array.from({length: range.value==='7d'?7: range.value==='30d'?30:90}, (_,i)=>`D${i+1}`)
-  const base = labels.map(()=>Math.floor(Math.random()*100))
-  const data1 = base.map(v=>v + Math.floor(Math.random()*50))
-  const data2 = base.map(v=>v + Math.floor(Math.random()*30))
-  const data3 = base.map(v=>v + Math.floor(Math.random()*10))
-  return { labels, datasets: [
-    { label:'Linea A', data: data1, borderColor:'#8b5cf6', fill:false, hidden: !visible.value.line1 },
-    { label:'Linea B', data: data2, borderColor:'#22d3ee', fill:false, hidden: !visible.value.line2 },
-    { label:'Linea C', data: data3, borderColor:'#f87171', fill:false, hidden: !visible.value.line3 }
-  ]}
+function setRange(t) {
+  range.value = t
+  loadData()
 }
 
-function render(){
+async function loadData() {
+  try {
+    const res = await axios.get(`http://localhost:3000/estadisticas?rango=${range.value}`)
+    ventasPorDia.value = res.data.ventas_por_dia
+    productos.value = res.data.productos_top
+    categorias.value = res.data.categorias
+    renderChart()
+  } catch (err) {
+    console.error('Error cargando estadísticas', err)
+  }
+}
+
+function renderChart() {
   const ctx = statsChart.value.getContext('2d')
-  if(chartInstance) chartInstance.destroy()
-  chartInstance = new Chart(ctx, { type:'line', data: buildData(), options:{ responsive:true, interaction:{mode:'index'} } })
+  if (chartInstance) chartInstance.destroy()
+
+  const labels = ventasPorDia.value.map(v => v.fecha.split('T')[0])
+  const data = ventasPorDia.value.map(v => v._sum?.total || 0)
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Ventas Totales',
+        data,
+        borderColor: '#22d3ee',
+        fill: false,
+        tension: 0.2
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true } }
+    }
+  })
 }
 
-watch([range, ()=>visible.value.line1, ()=>visible.value.line2, ()=>visible.value.line3], render)
-onMounted(render)
+onMounted(loadData)
+watch(categoriaFiltro, renderChart)
 </script>

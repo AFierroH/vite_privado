@@ -1,60 +1,108 @@
 <template>
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 text-[var(--text-primary)]">
-    <div class="lg:col-span-2">
-      <div class="p-4 bg-[var(--panel)] rounded-lg shadow mb-6">
-        <h3 class="text-lg font-semibold mb-2">Ventas - Últimos 7 días</h3>
-        <canvas ref="mainChart" style="height:300px"></canvas>
-      </div>
-      <div class="p-4 bg-[var(--panel)] rounded-lg shadow">
-        <h3 class="text-lg font-semibold mb-2">Top productos</h3>
-        
-        <div class="max-h-64 overflow-y-auto">
-          <div v-for="p in top" :key="p.id" class="flex justify-between py-2 border-b border-[var(--border)]">
-            <div>{{p.nombre}}</div>
-            <div class="text-[var(--muted)]">{{p.unidades}}</div>
-          </div>
-        </div>
-      </div>
+  <div class="space-y-6">
+    <!-- Controles -->
+    <div class="flex gap-4 items-center">
+      <button
+        v-for="t in ['7d', '30d', '90d']"
+        :key="t"
+        @click="setRange(t)"
+        :class="[
+          'px-3 py-2 rounded transition',
+          range === t ? 'bg-[var(--accent)] text-black' : 'bg-[#0b1220] text-[var(--muted)]'
+        ]">
+        {{ t }}
+      </button>
+
+      <select v-model="categoriaFiltro" class="ml-auto bg-[#0b1220] border border-gray-700 px-2 py-1 rounded text-[var(--muted)]">
+        <option value="">Todas las categorías</option>
+        <option v-for="c in categorias" :key="c.categoria" :value="c.categoria">{{ c.categoria }}</option>
+      </select>
     </div>
 
-    <div>
-      <div class="p-4 bg-[var(--panel)] rounded-lg shadow mb-4">
-        <div class="text-sm text-[var(--muted)]">Ventas Hoy</div>
-        <div class="text-2xl font-bold mt-2">$ {{totales.hoy}}</div>
-      </div>
-      <div class="p-4 bg-[var(--panel)] rounded-lg shadow">
-        <div class="text-sm text-[var(--muted)]">Ticket Promedio</div>
-        <div class="text-xl font-semibold mt-2">${{totales.ticket}}</div>
-      </div>
+    <!-- Gráfico de ventas -->
+    <div class="p-4 bg-[var(--panel)] rounded shadow">
+      <canvas ref="statsChart" height="360"></canvas>
+    </div>
+
+    <!-- Productos top -->
+    <div class="bg-[var(--panel)] p-4 rounded shadow">
+      <h3 class="text-lg font-semibold mb-3 text-[var(--text-primary)]">Productos más vendidos 🏆</h3>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-[var(--muted)] border-b border-gray-700">
+            <th class="text-left p-2">Producto</th>
+            <th class="text-right p-2">Cantidad</th>
+            <th class="text-right p-2">Ingresos</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in productos" :key="p.nombre" class="border-b border-gray-800">
+            <td class="p-2">{{ p.nombre }}</td>
+            <td class="p-2 text-right">{{ p.total_vendido }}</td>
+            <td class="p-2 text-right">${{ p.ingreso.toLocaleString() }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
+
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import Chart from 'chart.js/auto'
-import { fetchTopProducts, fetchSalesRange } from '../api'
+import axios from 'axios'
 
-const mainChart = ref(null)
-const top = ref([])
-const totales = ref({ hoy: 0, ticket: 0 })
+const range = ref('7d')
+const categoriaFiltro = ref('')
+const categorias = ref([])
+const productos = ref([])
+const ventasPorDia = ref([])
+const statsChart = ref(null)
+let chartInstance = null
 
-async function load(){
-  // ventas demo / backend
-  const inicio = new Date(); inicio.setDate(inicio.getDate()-6)
-  const fechaInicio = inicio.toISOString().slice(0,10)
-  const fechaFin = new Date().toISOString().slice(0,10)
-  let ventas = []
-  try { ventas = (await fetchSalesRange(fechaInicio, fechaFin)).data } catch(e){
-    ventas = Array.from({length:7}).map((_,i)=>({ fecha: `D${i+1}`, total: Math.floor(Math.random()*100000)+20000 }))
-  }
-  const labels = ventas.map(v=>v.fecha.slice(5))
-  const data = ventas.map(v=>v.total)
-  new Chart(mainChart.value.getContext('2d'), { type:'line', data:{ labels, datasets:[{ label:'Ventas', data, fill:true, backgroundColor:'rgba(139,92,246,0.12)', borderColor:'#8b5cf6' }] }, options:{ responsive:true } })
-
-  try { const tp = (await fetchTopProducts()).data; top.value = tp.map(t=>({ id:t.id_producto, nombre: t.nombre || 'Producto', unidades: t._sum?.cantidad || 0 })) } catch(e){ top.value = [{id:1,nombre:'Coca',unidades:120}] }
-  totales.value.hoy = data[data.length-1] || 0
-  totales.value.ticket = Math.round(data.reduce((a,b)=>a+b,0)/data.length/10)
+function setRange(t) {
+  range.value = t
+  loadData()
 }
 
-onMounted(load)
+async function loadData() {
+  try {
+    const res = await axios.get(`http://localhost:3000/estadisticas?rango=${range.value}`)
+    ventasPorDia.value = res.data.ventas_por_dia
+    productos.value = res.data.productos_top
+    categorias.value = res.data.categorias
+    renderChart()
+  } catch (err) {
+    console.error('Error cargando estadísticas', err)
+  }
+}
+
+function renderChart() {
+  const ctx = statsChart.value.getContext('2d')
+  if (chartInstance) chartInstance.destroy()
+
+  const labels = ventasPorDia.value.map(v => v.fecha.split('T')[0])
+  const data = ventasPorDia.value.map(v => v._sum?.total || 0)
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Ventas Totales',
+        data,
+        borderColor: '#22d3ee',
+        fill: false,
+        tension: 0.2
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true } }
+    }
+  })
+}
+
+onMounted(loadData)
+watch(categoriaFiltro, renderChart)
 </script>

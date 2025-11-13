@@ -1,101 +1,105 @@
 <template>
-  <!-- Este div ahora toma el alto completo (h-full) y gestiona su layout con flex -->
-  <div class="h-full flex flex-col text-[var(--text-primary)]">
-    <h1 class="text-2xl font-bold mb-4">Importador - Mapear tablas</h1>
+  <div class="min-h-screen w-full grid grid-rows-[auto_1fr_auto] gap-4 p-6 text-[var(--text-primary)] bg-[var(--bg-deep)]">
+    <h1 class="text-2xl font-bold">Importador - Mapear tablas</h1>
 
-    <!-- Sección 1: Subir archivo -->
-    <section class="mb-6 p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
-      <label class="block mb-2 font-medium">1) Subir archivo .sql</label>
-      <input type="file" accept=".sql" @change="onFileChange" class="text-sm" />
-      <button
-        class="ml-2 px-3 py-1 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg text-sm"
-        @click="upload"
-        :disabled="!file"
+    <!-- CONTENIDO PRINCIPAL CON SCROLL -->
+    <div class="overflow-y-auto flex flex-col gap-6">
+      <!-- Sección 1: Subir archivo -->
+      <section class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
+        <label class="block mb-2 font-medium">1) Subir archivo .sql</label>
+        <input type="file" accept=".sql" @change="onFileChange" class="text-sm" />
+        <button
+          class="ml-2 px-3 py-1 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg text-sm"
+          @click="upload"
+          :disabled="!file"
+        >
+          Subir
+        </button>
+        <div v-if="uploadId" class="mt-2 text-sm text-green-400">
+          Upload ID: {{ uploadId }}
+        </div>
+      </section>
+
+      <!-- Sección 2: Mapeo -->
+      <section
+        v-if="parsedTables.length"
+        class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg flex flex-col gap-4"
       >
-        Subir
-      </button>
-      <div v-if="uploadId" class="mt-2 text-sm text-green-400">
-        Upload ID: {{ uploadId }}
-      </div>
-    </section>
+        <label class="block font-medium">2) Elegir tablas</label>
 
-    <!-- Sección 2: Mapeo (solo si hay tablas) -->
-    <section v-if="parsedTables.length" class="flex-1 flex flex-col mb-6 p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg overflow-hidden">
-      <label class="block mb-2 font-medium">2) Elegir tablas</label>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium mb-1">Tabla destino (mi BD)</label>
-          <select
-            v-model="selectedDestTable"
-            class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
-            @change="onDestChange"
-          >
-            <option value="">-- elegir tabla destino --</option>
-            <option v-for="(cols, tbl) in destSchema" :key="tbl" :value="tbl">
-              {{ tbl }}
-            </option>
-          </select>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Tabla destino (mi BD)</label>
+            <select
+              v-model="selectedDestTable"
+              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              @change="onDestChange"
+            >
+              <option value="">-- elegir tabla destino --</option>
+              <option v-for="(cols, tbl) in destSchema" :key="tbl" :value="tbl">{{ tbl }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Tabla origen (archivo importado)</label>
+            <select
+              v-model="selectedSourceTable"
+              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              @change="onSourceChange"
+            >
+              <option value="">-- elegir tabla origen --</option>
+              <option v-for="t in parsedTables" :key="t.name" :value="t.name">
+                {{ t.name }} ({{ t.columns.length }} columnas)
+              </option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Tabla origen (archivo importado)</label>
-          <select
-            v-model="selectedSourceTable"
-            class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
-            @change="onSourceChange"
-          >
-            <option value="">-- elegir tabla origen --</option>
-            <option v-for="t in parsedTables" :key="t.name" :value="t.name">
-              {{ t.name }} (cols: {{ t.columns.length }})
-            </option>
-          </select>
-        </div>
-      </div>
 
-      <!-- Mapeo -->
-      <div v-if="selectedDestTable && selectedSourceTable" class="mt-4 flex-1 flex flex-col overflow-hidden">
-        <h3 class="font-semibold">3) Mapear columnas</h3>
-        <div class="mt-2 space-y-2 overflow-y-auto pr-2">
+        <!-- Mapeo -->
+        <div
+          v-if="selectedDestTable && selectedSourceTable"
+          class="border-t border-[var(--border)] pt-4 flex flex-col gap-3 max-h-[60vh] overflow-y-auto"
+        >
+          <h3 class="font-semibold text-lg">3) Mapear columnas</h3>
+
           <div
             v-for="destField in destSchema[selectedDestTable]"
             :key="destField"
-            class="flex gap-2 items-center"
+            class="flex flex-col sm:flex-row gap-2 items-center"
           >
-            <div class="w-48 font-medium text-sm text-[var(--muted)]">{{ destField }}</div>
+            <div class="w-full sm:w-48 font-medium text-sm text-[var(--muted)]">{{ destField }}</div>
             <select
               v-model="mapping[destField]"
               class="flex-1 p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
             >
               <option value="">-- no asignado --</option>
               <option value="__skip">-- SKIP --</option>
-              <option v-for="col in sourceColumns" :key="col" :value="col">
-                {{ col }}
-              </option>
+              <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
               <option value="__static">-- valor estático --</option>
             </select>
-            <div v-if="mapping[destField] === '__static'">
-              <input
-                v-model="staticValues[destField]"
-                placeholder="valor estático"
-                class="p-2 w-32 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
-              />
-            </div>
+
+            <input
+              v-if="mapping[destField] === '__static'"
+              v-model="staticValues[destField]"
+              placeholder="valor estático"
+              class="p-2 w-32 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+            />
           </div>
-        </div>
 
-        <div class="mt-4 flex gap-2">
-          <button class="px-4 py-2 bg-green-600 text-white rounded-lg" @click="preview">
-            Previsualizar
-          </button>
-          <button class="px-4 py-2 bg-blue-600 text-white rounded-lg" @click="finalizeImport">
-            Importar (simulado)
-          </button>
-        </div>
+          <div class="flex flex-wrap gap-2 mt-4">
+            <button class="px-4 py-2 bg-green-600 text-white rounded-lg" @click="preview">
+              Previsualizar
+            </button>
+            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg" @click="finalizeImport">
+              Importar (simulado)
+            </button>
+          </div>
 
-        <!-- Preview -->
-        <div v-if="previewResult" class="mt-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] flex-1 overflow-auto">
-          <h4 class="font-semibold mb-2">Previsualización</h4>
-          <div class="overflow-x-auto">
+          <!-- Preview -->
+          <div
+            v-if="previewResult"
+            class="mt-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] overflow-auto"
+          >
+            <h4 class="font-semibold mb-2">Previsualización</h4>
             <table class="w-full table-auto text-sm">
               <thead>
                 <tr class="bg-[var(--panel)]">
@@ -114,18 +118,21 @@
             </table>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Tablas detectadas -->
-    <section v-if="parsedTables.length" class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
-      <h2 class="font-semibold mb-2">Tablas detectadas</h2>
-      <ul class="text-sm">
-        <li v-for="t in parsedTables" :key="t.name" class="mb-2">
-          <strong>{{ t.name }}</strong> — <span class="text-[var(--muted)]">{{ t.columns.join(', ') }}</span>
-        </li>
-      </ul>
-    </section>
+      <!-- Tablas detectadas -->
+      <section
+        v-if="parsedTables.length"
+        class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg"
+      >
+        <h2 class="font-semibold mb-2">Tablas detectadas</h2>
+        <ul class="text-sm space-y-1">
+          <li v-for="t in parsedTables" :key="t.name">
+            <strong>{{ t.name }}</strong> — <span class="text-[var(--muted)]">{{ t.columns.join(', ') }}</span>
+          </li>
+        </ul>
+      </section>
+    </div>
   </div>
 </template>
 
