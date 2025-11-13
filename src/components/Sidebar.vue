@@ -74,7 +74,7 @@ const items = [
   { key: 'estadisticas', title: 'Estadísticas', route: '/estadisticas', adminOnly: true },
   { key: 'config', title: 'Configuración', route: '/config', adminOnly: true },
   { key: 'usuarios', title: 'Usuarios', route: '/usuarios' },
-  { key: 'importer', title: 'Importar BD', route: '/importer' },
+  { key: 'importer', title: 'Importar BD', route: '/importer' }
 ]
 
 const filteredItems = computed(() => {

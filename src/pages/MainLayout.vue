@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue' 
+import { ref } from 'vue' // Importamos ref
 import Sidebar from '../components/Sidebar.vue'
 import Topbar from '../components/Topbar.vue'
 
@@ -36,7 +36,6 @@ const isSidebarCollapsed = ref(false)
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
-
 function toggleTheme() {
   document.documentElement.classList.toggle('dark')
   const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light'

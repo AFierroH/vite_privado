@@ -2,10 +2,81 @@
 /* Use CSS vars to keep dark/light theme easy to switch via 'dark' class on html. */
 @import "tailwindcss";
 
-:root{
-  --bg: #071025;
-  --panel: #0f1724;
-  --muted: #94a3b8;
-  --accent: #8b5cf6;
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+/* PASO 1: DEFINIR VARIABLES DE COLOR 
+  Aquí están todos tus colores para ambos temas.
+*/
+:root {
+  /* --- MODO CLARO (Default) --- */
+  --bg: #F3F4F6;             /* Fondo gris muy claro */
+  --panel: #FFFFFF;           /* Paneles blancos */
+  --bg-deep: #E5E7EB;         /* Un fondo un poco más oscuro (ej. inputs) */
+  --border: #D1D5DB;          /* Bordes grises */
+  
+  --text-primary: #111827;    /* Texto principal (casi negro) */
+  --muted: #6B7280;            /* Texto secundario (gris) */
+
+  --accent: #3B82F6;           /* Acento (azul) */
+  --text-on-accent: #FFFFFF;  /* Texto sobre el acento (blanco) */
+
+  --scrollbar-thumb: #6B7280;  /* Scrollbar en modo claro */
 }
-html.dark { background: var(--bg); color-scheme: dark; }
+
+.dark {
+  /* --- MODO OSCURO --- */
+  /* Sobrescribe las variables cuando <html> tiene la clase .dark */
+  --bg: #111827;             /* Fondo principal (azul/gris muy oscuro) */
+  --panel: #1F2937;           /* Paneles (gris oscuro) */
+  --bg-deep: #081026;         /* (Este es el que usabas en tus inputs) */
+  --border: #374151;          /* Bordes (gris-700) */
+  
+  --text-primary: #F9FAFB;    /* Texto principal (casi blanco) */
+  --muted: #9CA3AF;            /* Texto secundario (gris claro) */
+
+  --accent: #60A5FA;           /* Acento (azul más brillante) */
+  --text-on-accent: #000000;  /* Texto sobre el acento (negro) */
+
+  --scrollbar-thumb: #374151;  /* Scrollbar en modo oscuro (tu color original) */
+}
+
+/* PASO 2: APLICAR VARIABLES AL <body>
+  Aquí combinamos tus estilos de 'body' con los míos.
+*/
+body {
+  /* Tus estilos originales */
+  font-family: 'Roboto', sans-serif;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Estilos añadidos para el tema */
+  background-color: var(--bg);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+/* PASO 3: APLICAR VARIABLES AL SCROLLBAR
+  Modificamos tu scrollbar para que use la variable.
+*/
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb); /* <-- Usamos la variable */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  /* Aclaramos u oscurecemos la variable (esto es avanzado,
+     pero por ahora lo dejaremos fijo o puedes usar otra variable) */
+  background: #4B5563; /* (gray-600) */
+}
