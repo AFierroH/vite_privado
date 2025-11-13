@@ -1,13 +1,22 @@
 <template>
-  <div class="w-full max-w-4xl mx-auto">
+  <div class="h-full w-full flex flex-col">
     <div class="flex justify-between mb-4">
       <h2 class="text-xl font-semibold">Usuarios</h2>
-      <button @click="openModal()" class="bg-[var(--accent)] text-[var(--text-on-accent)] px-3 py-2 rounded">Nuevo Usuario</button>
+      <button
+        @click="openModal()"
+        class="bg-[var(--accent)] text-[var(--text-on-accent)] px-3 py-2 rounded"
+      >
+        Nuevo Usuario
+      </button>
     </div>
 
-    <div class="bg-[var(--panel)] p-4 rounded shadow">
-      <div v-for="u in usuarios" :key="u.id_usuario" class="flex justify-between py-2 border-b border-[var(--border)]">
-        <div>{{u.nombre}} ({{u.email}})</div>
+    <div class="flex-1 bg-[var(--panel)] p-4 rounded shadow overflow-y-auto">
+      <div
+        v-for="u in usuarios"
+        :key="u.id_usuario"
+        class="flex justify-between py-2 border-b border-[var(--border)]"
+      >
+        <div>{{ u.nombre }} ({{ u.email }})</div>
         <div class="flex gap-2">
           <button @click="openModal(u)" class="text-[var(--accent)] hover:underline">Editar</button>
           <button @click="remove(u.id_usuario)" class="text-red-400 hover:underline">Eliminar</button>
@@ -15,21 +24,22 @@
       </div>
     </div>
 
-    <div v-if="showModal" class="fixed inset-0 bg-black/50 flex items-center justify-center">
+    <!-- Modal -->
+    <div v-if="showModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div class="bg-[var(--panel)] p-6 rounded w-[400px]">
-        <h3 class="text-lg font-semibold mb-4">{{editing?'Editar Usuario':'Nuevo Usuario'}}</h3>
-        
-        <input v-model="form.nombre" placeholder="Nombre" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]"/>
-        <input v-model="form.email" placeholder="Email" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]"/>
-        <input v-model="form.clave" placeholder="Clave" type="password" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]"/>
-        <select v-model="form.rol" class="w-full mb-4 p-2 rounded bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)]">
+        <h3 class="text-lg font-semibold mb-4">{{ editing ? "Editar Usuario" : "Nuevo Usuario" }}</h3>
+
+        <input v-model="form.nombre" placeholder="Nombre" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] border border-[var(--border)]" />
+        <input v-model="form.email" placeholder="Email" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] border border-[var(--border)]" />
+        <input v-model="form.clave" placeholder="Clave" type="password" class="w-full mb-2 p-2 rounded bg-[var(--bg-deep)] border border-[var(--border)]" />
+        <select v-model="form.rol" class="w-full mb-4 p-2 rounded bg-[var(--bg-deep)] border border-[var(--border)]">
           <option value="admin">Admin</option>
           <option value="vendedor">Vendedor</option>
           <option value="analista">Analista</option>
         </select>
-        
+
         <div class="flex justify-end gap-3">
-          <button @click="showModal=false">Cancelar</button>
+          <button @click="showModal = false">Cancelar</button>
           <button @click="save" class="bg-[var(--accent)] text-[var(--text-on-accent)] px-4 py-2 rounded">Guardar</button>
         </div>
       </div>

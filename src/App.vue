@@ -4,7 +4,7 @@ import LoginPage from './pages/Login.vue'
 import MainLayout from './pages/MainLayout.vue'
 
 const user = ref(null)
-const isReady = ref(false) 
+const isReady = ref(false)
 
 function handleLogin(session) {
   user.value = session.user
@@ -16,7 +16,7 @@ function logout() {
   user.value = null
   localStorage.removeItem('session')
   console.log('Sesión cerrada')
-  window.location.reload() 
+  window.location.reload()
 }
 
 function renewSession() {
@@ -42,15 +42,13 @@ onMounted(() => {
         user.value = session.user
         console.log('Sesión cargada:', session.user)
       } else {
-        console.log('Sesión expirada al iniciar')
         logout()
       }
     } catch (err) {
-      console.warn('Sesión inválida, limpiando...')
       logout()
     }
   }
-  isReady.value = true 
+  isReady.value = true
   window.addEventListener('click', renewSession)
   window.addEventListener('keydown', renewSession)
   window.addEventListener('scroll', renewSession)
@@ -66,8 +64,11 @@ watchEffect(() => console.log('Usuario actual:', user.value))
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#071025] text-gray-100 flex items-center justify-center">
-    <div v-if="!isReady" class="text-gray-400">Cargando sesión...</div>
+  <!-- 👇 Ya no usamos flex ni justify-center -->
+  <div class="h-screen w-screen bg-[var(--bg-deep)] text-[var(--text-primary)]">
+    <div v-if="!isReady" class="flex items-center justify-center h-full text-gray-400">
+      Cargando sesión...
+    </div>
 
     <LoginPage v-else-if="!user" @login-success="handleLogin" />
     <MainLayout v-else :user="user" @logout="logout" />
