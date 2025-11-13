@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen w-full grid grid-rows-[auto_1fr_auto] gap-4 p-6 text-[var(--text-primary)] bg-[var(--bg-deep)]">
+  <div class="min-h-screen w-full grid grid-rows-[auto_1fr_auto] gap-4 p-6 text-[var(--text-primary)] bg-[var(--bg-deep)] overflow-y-auto">
     <h1 class="text-2xl font-bold">Importador - Mapear tablas</h1>
 
     <!-- CONTENIDO PRINCIPAL CON SCROLL -->
@@ -21,10 +21,10 @@
       </section>
 
       <!-- Sección 2: Mapeo -->
-      <section
-        v-if="parsedTables.length"
-        class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg flex flex-col gap-4"
-      >
+      <<section
+  v-if="parsedTables.length"
+  class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg flex flex-col gap-4 flex-1 overflow-y-auto"
+>
         <label class="block font-medium">2) Elegir tablas</label>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
