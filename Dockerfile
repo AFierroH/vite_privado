@@ -2,7 +2,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 # Solo copiar paquete del servidor
-COPY package.server.json ./package.json
+COPY package.json ./package.json
 
 RUN npm install --omit=dev
 
