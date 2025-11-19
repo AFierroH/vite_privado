@@ -155,20 +155,20 @@
 </template>
 
 <script setup>
+
 import { ref, onMounted, computed } from 'vue'
 import { fetchProducts, emitirVenta, fetchVoucher } from '../api'
 import { useAuth } from '../composables/useAuth.js'
 
 const { currentUser } = useAuth()
+
 function formatPrice(value) {
   const numberValue = Number(value)
-  if (isNaN(numberValue)) {
-    return '$0' 
-  }
-return new Intl.NumberFormat('es-CL', {
+  if (isNaN(numberValue)) return '$0'
+  return new Intl.NumberFormat('es-CL', {
     style: 'currency',
     currency: 'CLP',
-    maximumFractionDigits: 0, 
+    maximumFractionDigits: 0,
     minimumFractionDigits: 0
   }).format(numberValue)
 }
@@ -205,12 +205,13 @@ async function search() {
 
 async function listPrinters() {
   try {
-    console.log('Listando impresoras...')
+    console.log('Listando impresoras (electron)...')
     const list = await window.electronAPI?.listSystemPrinters?.()
-    console.log('Resultado:', list)
+    // puede venir array de strings o array de objetos
     printers.value = Array.isArray(list)
       ? list.map(p => (typeof p === 'string' ? p : p.name || JSON.stringify(p)))
       : []
+    console.log('Impresoras:', printers.value)
   } catch (e) {
     console.error('listPrinters', e)
     printers.value = []
@@ -220,7 +221,11 @@ async function listPrinters() {
 async function listUsbDevices() {
   try {
     const list = await window.electronAPI?.listUsbDevices?.()
-    usbDevices.value = Array.isArray(list) ? list.map(d => d.productName || d.serial || JSON.stringify(d)) : []
+    // tu handler devuelve objetos con name/isUSB/status
+    usbDevices.value = Array.isArray(list)
+      ? list.map(d => (d.name || d.product || JSON.stringify(d)))
+      : []
+    console.log('USB devices:', usbDevices.value)
   } catch (err) {
     console.error('listUsbDevices', err)
     usbDevices.value = []
@@ -230,7 +235,10 @@ async function listUsbDevices() {
 async function detectScanners() {
   try {
     const list = await window.electronAPI?.detectScanners?.()
-    connectedScanners.value = Array.isArray(list) ? list.map(s => s.name || JSON.stringify(s)) : []
+    connectedScanners.value = Array.isArray(list)
+      ? list.map(s => s.product || s.name || JSON.stringify(s))
+      : []
+    console.log('Scanners:', connectedScanners.value)
   } catch (err) {
     console.error('detectScanners', err)
     connectedScanners.value = []
@@ -271,12 +279,34 @@ function recalcLine(it) { it.subtotal = it.cantidad * it.precio }
 function clear() { cart.value = []; ventaResult.value = null; voucherLoaded.value = null; voucherNumber.value = '' }
 const total = computed(() => cart.value.reduce((a, b) => a + (b.subtotal || 0), 0))
 
+/**
+ * Normaliza la respuesta del backend para construir el objeto 'sale' que espera electron:
+ * sale = { empresa, venta, detalles, total }
+ */
+function normalizeSaleFromBackend(resp) {
+  // resp puede ser: { venta, ticket, empresa, detalles, total } o { ticketBase64, venta, ... }
+  const data = resp?.data ?? resp
+
+  // preferir campos explícitos, si no usar cart/local
+  const venta = data?.venta || data?.sale?.venta || data?.venta || { id_venta: data?.venta?.id_venta }
+  const empresa = data?.empresa || data?.venta?.empresa || data?.sale?.empresa || {}
+  const detalles = data?.detalles || data?.venta?.detalles || data?.sale?.detalles || cart.value.map(i => ({
+    id_producto: i.id_producto,
+    nombre: i.nombre,
+    cantidad: i.cantidad,
+    precio_unitario: i.precio || i.precio_unitario,
+  }))
+  const tot = data?.total ?? data?.venta?.total ?? total.value
+
+  return { empresa, venta: venta || {}, detalles: detalles || [], total: tot || 0, rawBackend: data }
+}
+
 // CHECKOUT -> emitirVenta (registro + ticket)
 async function checkout() {
   if (cart.value.length === 0) return alert('Carrito vacío')
 
   const user = currentUser.value ?? {}
-  const detalles = cart.value.map(i => ({
+  const detallesPayload = cart.value.map(i => ({
     id_producto: i.id_producto,
     cantidad: i.cantidad,
     precio_unitario: i.precio,
@@ -287,8 +317,8 @@ async function checkout() {
     id_usuario: user.id || 1,
     id_empresa: user.empresaId ?? user.id_empresa ?? 1,
     total: total.value,
-    detalles,
-    pagos: [{ id_pago: 1, monto: total.value }], // ajustar a tu modelo de pagos
+    detalles: detallesPayload,
+    pagos: [{ id_pago: 1, monto: total.value }],
     usarImpresora: usarImpresora.value,
     printerType: printerType.value,
     printerInfo: printerInfo.value,
@@ -299,31 +329,61 @@ async function checkout() {
     const resp = await emitirVenta(payload)
     const data = resp?.data ?? resp
     if (!data) { alert('Respuesta inválida del backend'); return }
-    // backend devuelve { venta, ticket }
-    ventaResult.value = data.ticket ?? data
 
-    // imprimir si corresponde
-    if (usarImpresora.value && ventaResult.value?.ticketBase64) {
+    // guardar resultado bruto para preview
+    ventaResult.value = data
+
+    // construir objeto sale para enviar a electron
+    const sale = normalizeSaleFromBackend(data)
+
+    // si electron expone printFromData, usarlo (preferido)
+    if (window.electronAPI?.printFromData) {
       try {
         const options = {
           type: printerType.value,
-          printer: selectedPrinter.value || null,
           ip: printerInfo.value.ip,
           port: printerInfo.value.port,
-          usb: printerInfo.value.usb,
-          com: printerInfo.value.com
+          printerName: selectedPrinter.value || null,
+          codepage: undefined
         }
-        const printResp = await window.electronAPI.printRaw?.(ventaResult.value.ticketBase64, options)
-        console.log('Impresión resultado:', printResp)
+        const r = await window.electronAPI.printFromData(sale, options)
+        console.log('printFromData:', r)
+        if (r?.ok) {
+          alert('Venta emitida e impresa (electron).')
+          cart.value = []
+          return
+        } else {
+          console.warn('printFromData respuesta negativa, fallback:', r)
+        }
       } catch (err) {
-        console.error('Error al imprimir desde Electron', err)
-        alert('Error al imprimir. Revisa consola.')
+        console.error('Error printFromData', err)
       }
-    } else {
-      alert('Venta emitida — preview disponible')
     }
 
-    // limpieza simple después de venta exitosa
+    // fallback 1: si backend devolvió ticketBase64 usar printRaw
+    const ticketBase64 = data?.ticketBase64 || data?.ticket?.ticketBase64 || data?.ticket?.boletaBase64
+    if (ticketBase64 && window.electronAPI?.printRaw) {
+      try {
+        const options = {
+          type: printerType.value,
+          ip: printerInfo.value.ip,
+          port: printerInfo.value.port,
+          printer: selectedPrinter.value || null
+        }
+        const r2 = await window.electronAPI.printRaw(ticketBase64, options)
+        console.log('printRaw fallback:', r2)
+        if (r2?.ok) {
+          alert('Venta emitida e impresa (fallback printRaw).')
+          cart.value = []
+          return
+        }
+      } catch (err) {
+        console.error('fallback printRaw error', err)
+      }
+    }
+
+    // último recurso: mostrar preview y notificar
+    alert('Venta emitida. Preview disponible en la UI.')
     cart.value = []
   } catch (err) {
     console.error('checkout error', err)
@@ -340,13 +400,33 @@ function hexToBase64(hex) {
 
 async function testPrint() {
   try {
+    // si tienes printFromData disponible, crea un sale/simulado
+    const demoSale = {
+      empresa: { razonSocial: 'Demo S.A.', rut: '99.999.999-9', direccion: 'Demo 123', comuna: 'Demo', ciudad: 'Demo' },
+      venta: { id_venta: 'TEST-001', fecha: new Date().toLocaleString('es-CL') },
+      detalles: [
+        { id_producto: 1, nombre: 'Producto A', cantidad: 1, precio_unitario: 1200 },
+        { id_producto: 2, nombre: 'Producto B', cantidad: 2, precio_unitario: 800 }
+      ],
+      total: 1200 + 2 * 800
+    }
+
+    if (window.electronAPI?.printFromData) {
+      const options = { type: printerType.value, ip: printerInfo.value.ip, port: printerInfo.value.port, printerName: selectedPrinter.value || null }
+      const r = await window.electronAPI.printFromData(demoSale, options)
+      console.log('test printFromData:', r)
+      alert('Intento de impresión de prueba enviado (printFromData). Revisa consola.')
+      return
+    }
+
+    // fallback: pequeña cadena ESC/POS hex convertida a base64
     const base64Ticket = hexToBase64("1B4068656C6C6F20776F726C640A1D564200")
     const options = { type: printerType.value, ip: printerInfo.value.ip, port: printerInfo.value.port }
-    const result = await window.electronAPI.printRaw?.(base64Ticket, options)
-    console.log("Resultado impresión:", result)
-    alert("Ticket de prueba enviado a la impresora.")
+    const result = await window.electronAPI?.printRaw?.(base64Ticket, options)
+    console.log("Resultado impresión fallback:", result)
+    alert("Ticket de prueba (fallback) enviado.")
   } catch (err) {
-    console.error("Error al imprimir:", err)
+    console.error("Error al imprimir test:", err)
     alert("Error al imprimir. Revisa consola.")
   }
 }
@@ -376,32 +456,31 @@ async function discoverLan() {
   if (isScanningLan.value) return
   isScanningLan.value = true
   console.log('Iniciando descubrimiento LAN (FULL SCAN)...')
-  
-  try {
 
+  try {
     const scanOptions = {
-      fullScan: true,      
-      timeoutMs: 5000
+      ports: [printerInfo.value.port || 9100],
+      timeoutMs: 1200
     }
 
-    const ips = await window.electronAPI?.discoverLanPrinters?.(scanOptions)
-    
-    if (ips && ips.length > 0) {
-      console.log(`Impresoras encontradas: ${ips.map(p => p.ip).join(', ')}`)
-      printerInfo.value.ip = ips[0].ip 
-      printerType.value = 'lan' 
-      alert(`Impresora encontrada y configurada en: ${ips[0].ip}`)
+    const resp = await window.electronAPI?.discoverLanPrinters?.(scanOptions)
+    // tu handler devuelve { results, elapsedMs } en la versión nueva
+    const results = resp?.results ?? resp
+    if (Array.isArray(results) && results.length > 0) {
+      printerInfo.value.ip = results[0].ip
+      printerType.value = 'lan'
+      alert(`Impresora encontrada y configurada en: ${results[0].ip}`)
     } else {
-      console.log('No se encontraron impresoras LAN.')
-      alert('No se encontraron impresoras en la red (puerto 9100). Revisa el firewall.')
+      alert('No se encontraron impresoras LAN. Revisa firewall/red.')
     }
   } catch (err) {
     console.error('Error en discoverLan:', err)
-    alert(`Error al buscar impresoras: ${err.message}`)
+    alert(`Error al buscar impresoras: ${err?.message || err}`)
   } finally {
     isScanningLan.value = false
   }
 }
+
 onMounted(() => {
   search()
   listPrinters()
