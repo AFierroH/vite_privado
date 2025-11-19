@@ -14,10 +14,7 @@ api.interceptors.request.use(cfg => {
 })
 
 /* ----------------------- AUTH ----------------------- */
-export async function login(creds) {
-  const r = await api.post('/auth/login', creds)
-  return r.data
-}
+export async function login(creds) { return api.post('/auth/login', creds) }
 
 /* -------------------- ESTADÍSTICAS ------------------- */
 export async function fetchTopProducts() {
