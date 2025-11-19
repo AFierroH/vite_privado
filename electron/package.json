@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node node_modules/electron/cli.js .",
     "dev": "vite",
-    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && npx electron .\"",
     "build": "vite build",
     "preview": "vite preview",
     "tw:build": "npx @tailwindcss/cli -i ./src/style.css -o ./dist/output.css --minify",

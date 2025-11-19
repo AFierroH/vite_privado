@@ -150,7 +150,7 @@ async function renderEscposToPdf(ticketBase64, outPath, opts = {}) {
       })
     }
   } catch (e) {
-    console.warn('⚠️ No se pudo insertar PDF417:', e.message)
+    console.warn('No se pudo insertar PDF417:', e.message)
   }
 
   doc.end()
