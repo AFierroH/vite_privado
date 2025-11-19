@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node node_modules/electron/cli.js .",
-    "dev": "vite",
+    "dev": "npx electron .",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && npx electron .\"",
     "build": "vite build",
     "preview": "vite preview",
