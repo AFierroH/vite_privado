@@ -60,10 +60,10 @@ async function saveBoletaLocally(venta, pdfBuffer, xmlContent) {
     const xmlPath = path.join(folder, `${nombreArchivo}.xml`)
     if (xmlContent) fs.writeFileSync(xmlPath, xmlContent)
 
-    console.log('📄 Boleta guardada en:', pdfPath)
+    console.log('Boleta guardada en:', pdfPath)
     return { pdfPath, xmlPath }
   } catch (err) {
-    console.error('❌ Error guardando boleta localmente:', err)
+    console.error('Error guardando boleta localmente:', err)
     return null
   }
 }

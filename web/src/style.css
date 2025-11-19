@@ -1,8 +1,8 @@
 /* Import tailwind v4 (zero-config) and small theme variables. */
 /* Use CSS vars to keep dark/light theme easy to switch via 'dark' class on html. */
-@import "tailwindcss";
-
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+@import "tailwindcss";
 
 /* PASO 1: DEFINIR VARIABLES DE COLOR 
   Aquí están todos tus colores para ambos temas.
