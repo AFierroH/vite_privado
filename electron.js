@@ -1,3 +1,4 @@
+// electron.js (completo — reemplazar todo el archivo)
 import { app, BrowserWindow, ipcMain } from 'electron'
 import net from 'net'
 import { fileURLToPath } from 'url'
@@ -54,15 +55,15 @@ async function saveBoletaLocally(venta, pdfBuffer, xmlContent) {
     ).padStart(6, '0')}`
 
     const pdfPath = path.join(folder, `${nombreArchivo}.pdf`)
-    fs.writeFileSync(pdfPath, pdfBuffer)
+    if (pdfBuffer && pdfBuffer.length > 0) fs.writeFileSync(pdfPath, pdfBuffer)
 
     const xmlPath = path.join(folder, `${nombreArchivo}.xml`)
-    fs.writeFileSync(xmlPath, xmlContent)
+    if (xmlContent) fs.writeFileSync(xmlPath, xmlContent)
 
-    console.log('Boleta guardada en:', pdfPath)
+    console.log('📄 Boleta guardada en:', pdfPath)
     return { pdfPath, xmlPath }
   } catch (err) {
-    console.error('Error guardando boleta localmente:', err)
+    console.error('❌ Error guardando boleta localmente:', err)
     return null
   }
 }
@@ -149,7 +150,7 @@ async function renderEscposToPdf(ticketBase64, outPath, opts = {}) {
       })
     }
   } catch (e) {
-    console.warn('No se pudo insertar PDF417:', e.message)
+    console.warn('⚠️ No se pudo insertar PDF417:', e.message)
   }
 
   doc.end()
@@ -187,116 +188,76 @@ ipcMain.handle('pingPrinter', async (event, ip, port = 9100) => {
 })
 
 /* ---------------------------------------------------
- Imprimir + guardar local
+ Imprimir + guardar local (MEJORADO: envia RAW ESC/POS)
 --------------------------------------------------- */
-/* ipcMain.handle('printRaw', async (event, base64Data, options = {}) => {
+ipcMain.handle('printRaw', async (event, base64Data, options = {}) => {
   const { type = 'auto', ip, port = 9100, printer, venta, pdf417Base64 } = options
 
   try {
-    const tmpPath = path.join(process.env.TEMP || __dirname, `ticket_${Date.now()}.pdf`)
-
-    // Generar PDF real con logo y código
-    await renderEscposToPdf(base64Data, tmpPath, {
-      codepage: 'cp858',
-      pdf417Base64
-    })
-
-    const pdfBuffer = fs.readFileSync(tmpPath)
-
-    // Guardar XML simple local
-    const xml = `<boleta>
-  <empresa>${venta?.empresa || 'Comercial Temuco SpA'}</empresa>
-  <numero>${venta?.id_venta || '000000'}</numero>
-  <total>${venta?.total || 0}</total>
-  <fecha>${new Date().toLocaleString('es-CL')}</fecha>
-</boleta>`
-
-    await saveBoletaLocally(venta || {}, pdfBuffer, xml)
-
-    // Imprimir según tipo
-    if (type === 'lan' && ip) {
-      await print(tmpPath, { printer: printer || null, silent: true })
-    } else if (type === 'usb' || type === 'auto') {
-      await print(tmpPath, { printer: printer || null, silent: true })
-    }
-
-    fs.unlink(tmpPath, () => {})
-    return { ok: true, msg: 'Boleta impresa y guardada correctamente' }
-  } catch (err) {
-    console.error('Error en printRaw:', err)
-    return { ok: false, error: err.message || String(err) }
-  }
-}) */
-
-ipcMain.handle('printRaw', async (event, base64Data, options = {}) => {
-  const { type = 'auto', ip, port = 9100, printer, venta, pdf417Base64 } = options;
-
-  try {
     // 1) Decodificar buffer ESC/POS puro (lo que envía el backend)
-    const rawBuffer = Buffer.from(base64Data, 'base64');
+    const rawBuffer = Buffer.from(base64Data, 'base64')
 
     // 2) Generar PDF para guardado/preview (opcional, mantiene tu flujo actual)
-    //    No usamos ese PDF para imprimir en térmica; solo para guardar como archivo.
-    const tmpPath = path.join(process.env.TEMP || __dirname, `ticket_${Date.now()}.pdf`);
+    const tmpPath = path.join(process.env.TEMP || __dirname, `ticket_${Date.now()}.pdf`)
     try {
       await renderEscposToPdf(base64Data, tmpPath, {
         codepage: 'cp858',
         pdf417Base64
-      });
+      })
     } catch (err) {
-      console.warn('No se pudo generar PDF preview (no crítico):', err.message);
+      console.warn('No se pudo generar PDF preview (no crítico):', err.message)
     }
 
     // 3) Guardar localmente (siempre trata de guardar)
     try {
-      const pdfBuffer = fs.existsSync(tmpPath) ? fs.readFileSync(tmpPath) : Buffer.from([]);
+      const pdfBuffer = fs.existsSync(tmpPath) ? fs.readFileSync(tmpPath) : Buffer.from([])
       const xml = `<boleta>
   <empresa>${venta?.empresa || 'Comercial Temuco SpA'}</empresa>
   <numero>${venta?.id_venta || '000000'}</numero>
   <total>${venta?.total || 0}</total>
   <fecha>${new Date().toLocaleString('es-CL')}</fecha>
-</boleta>`;
-      await saveBoletaLocally(venta || {}, pdfBuffer, xml);
+</boleta>`
+      await saveBoletaLocally(venta || {}, pdfBuffer, xml)
     } catch (e) {
-      console.warn('Warning: no se pudo guardar boleta localmente:', e.message);
+      console.warn('Warning: no se pudo guardar boleta localmente:', e.message)
     }
 
     // 4) Impresión REAL (RAW) según tipo
     // --- LAN (raw TCP port 9100) ---
     const sendToLan = (ipAddr, portNum, buffer, timeout = 5000) =>
       new Promise((resolve, reject) => {
-        const socket = new net.Socket();
-        let done = false;
-        socket.setTimeout(timeout);
+        const socket = new net.Socket()
+        let done = false
+        socket.setTimeout(timeout)
         socket.once('connect', () => {
           socket.write(buffer, () => {
-            socket.end();
-            done = true;
-            resolve(true);
-          });
-        });
+            socket.end()
+            done = true
+            resolve(true)
+          })
+        })
         socket.once('error', (err) => {
-          if (!done) reject(err);
-        });
+          if (!done) reject(err)
+        })
         socket.once('timeout', () => {
           if (!done) {
-            socket.destroy();
-            reject(new Error('timeout'));
+            socket.destroy()
+            reject(new Error('timeout'))
           }
-        });
-        socket.connect(portNum, ipAddr);
-      });
+        })
+        socket.connect(portNum, ipAddr)
+      })
 
     if (type === 'lan' && ip) {
       // Enviar raw ESC/POS a impresora de red (puerto 9100)
       try {
-        await sendToLan(ip, port, rawBuffer, 5000);
+        await sendToLan(ip, port, rawBuffer, 5000)
         // Borra tmp PDF (si existe)
-        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-        return { ok: true, msg: 'Enviado a impresora LAN (RAW)' };
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath)
+        return { ok: true, msg: 'Enviado a impresora LAN (RAW)' }
       } catch (err) {
-        console.error('Error enviando a impresora LAN (RAW):', err);
-        // si falla, intenta fallback a pdf-to-printer
+        console.error('Error enviando a impresora LAN (RAW):', err)
+        // si falla, intenta fallback a usb/pdf
       }
     }
 
@@ -304,56 +265,56 @@ ipcMain.handle('printRaw', async (event, base64Data, options = {}) => {
     if ((type === 'usb' || type === 'auto')) {
       try {
         // intenta require dinámico para no romper si no está instalado
-        const escpos = require('escpos');
-        escpos.USB = require('escpos-usb');
-        const device = new escpos.USB();
-        const printerEsc = new escpos.Printer(device, { encoding: 'CP858' });
+        const escpos = require('escpos')
+        escpos.USB = require('escpos-usb')
+        const device = new escpos.USB()
+        const printerEsc = new escpos.Printer(device, { encoding: 'CP858' })
 
         await new Promise((resolve, reject) => {
           device.open(() => {
             try {
-              // Enviar RAW bytes directamente (printer.raw / printer.write)
+              // Enviar RAW bytes directamente cuando es posible
               if (typeof printerEsc.raw === 'function') {
-                printerEsc.raw(rawBuffer);
+                printerEsc.raw(rawBuffer)
               } else if (typeof printerEsc.write === 'function') {
-                printerEsc.write(rawBuffer);
+                printerEsc.write(rawBuffer)
               } else {
-                // Fallback: enviar como texto (solo si nada mejor)
-                printerEsc.text(rawBuffer.toString('binary'));
+                // Fallback: enviar como texto (que normalmente no quieres)
+                printerEsc.text(rawBuffer.toString('binary'))
               }
-              printerEsc.cut && printerEsc.cut();
+              printerEsc.cut && printerEsc.cut()
               // cerrar y resolver
-              printerEsc.close && printerEsc.close();
-              resolve(true);
+              printerEsc.close && printerEsc.close()
+              resolve(true)
             } catch (err) {
-              reject(err);
+              reject(err)
             }
-          });
-        });
+          })
+        })
 
-        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-        return { ok: true, msg: 'Enviado a impresora USB (ESC/POS)' };
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath)
+        return { ok: true, msg: 'Enviado a impresora USB (ESC/POS)' }
       } catch (err) {
-        console.warn('escpos no disponible o error imprimiendo USB, haciendo fallback:', err.message || err);
+        console.warn('escpos no disponible o error imprimiendo USB, haciendo fallback:', err.message || err)
         // fallback al método pdf-to-printer (ya existente)
       }
     }
 
     // --- Fallback: usar pdf-to-printer si todo lo otro falla (menos ideal para térmica) ---
     try {
-      await print(tmpPath, { printer: printer || null, silent: true });
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-      return { ok: true, msg: 'Impreso vía pdf-to-printer (fallback)' };
+      await print(tmpPath, { printer: printer || null, silent: true })
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath)
+      return { ok: true, msg: 'Impreso vía pdf-to-printer (fallback)' }
     } catch (err) {
-      console.error('Error fallback pdf-to-printer:', err);
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-      return { ok: false, error: String(err) };
+      console.error('Error fallback pdf-to-printer:', err)
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath)
+      return { ok: false, error: String(err) }
     }
   } catch (err) {
-    console.error('Error en printRaw:', err);
-    return { ok: false, error: err.message || String(err) };
+    console.error('Error en printRaw:', err)
+    return { ok: false, error: err.message || String(err) }
   }
-});
+})
 
 /* ---------------------------------------------------
  Descubrir impresoras LAN
