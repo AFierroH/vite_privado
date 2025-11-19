@@ -4,8 +4,7 @@ WORKDIR /app
 # Solo copiar paquete del servidor
 COPY package.json ./package.json
 
-RUN npm install --omit=dev
-
+RUN npm install
 # Ahora copiar todo tu código web
 COPY . .
 
