@@ -1,23 +1,14 @@
-FROM node:22
+FROM node:22-alpine as build
 
 WORKDIR /app
-
 COPY package*.json ./
-RUN apt-get update && apt-get install -y \
-    python3 \
-    build-essential \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libjpeg-dev \
-    libgif-dev \
-    librsvg2-dev
-
 RUN npm install --omit=dev
-
 COPY . .
-
 RUN npm run build
 
-EXPOSE 3000
+# NGINX
+FROM nginx:stable-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-CMD ["node", "dist/main.js"]
+EXPOSE 80
