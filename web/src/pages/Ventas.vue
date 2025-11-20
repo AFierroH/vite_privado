@@ -1,6 +1,5 @@
 <template>
   <div class="p-4">
-    <!-- HEADER -->
     <div class="mb-4 flex items-center gap-4">
       <div class="flex items-center gap-2">
         <label class="text-white">Modo venta:</label>
@@ -13,32 +12,32 @@
       <div class="flex items-center gap-2 ml-6">
         <label class="text-white">Tipo impresora:</label>
         <select v-model="printerType" class="p-2 rounded bg-[#081026] text-white">
-        <option value="auto">Auto</option>
-        <option value="lan">LAN (IP)</option>
-        <option value="usb">USB</option>
-        <option value="com">COM (serial)</option>
-      </select>
+          <option value="auto">Auto</option>
+          <option value="lan">LAN (IP)</option>
+          <option value="usb">USB</option>
+          <option value="com">COM (serial)</option>
+        </select>
       
-      <div v-if="printerType === 'lan'" class="flex items-center gap-2">
-  <input 
-    v-model="printerInfo.ip" 
-    placeholder="IP de la impresora" 
-    class="p-2 rounded bg-[#081026] text-white" />
-  <input 
-    v-model.number="printerInfo.port" 
-    type="number" 
-    class="p-2 w-20 rounded bg-[#081026] text-white" />
-  <button @click="discoverLan" :disabled="isScanningLan" class="px-3 py-2 bg-blue-600 rounded text-white">
-    {{ isScanningLan ? 'Buscando...' : 'Buscar' }}
-  </button>
-</div>
+        <div v-if="printerType === 'lan'" class="flex items-center gap-2">
+          <input 
+            v-model="printerInfo.ip" 
+            placeholder="IP de la impresora" 
+            class="p-2 rounded bg-[#081026] text-white" />
+          <input 
+            v-model.number="printerInfo.port" 
+            type="number" 
+            class="p-2 w-20 rounded bg-[#081026] text-white" />
+          <button @click="discoverLan" :disabled="isScanningLan" class="px-3 py-2 bg-blue-600 rounded text-white">
+            {{ isScanningLan ? 'Buscando...' : 'Buscar' }}
+          </button>
+        </div>
 
-      <div v-if="printerType === 'com'" class="flex items-center gap-2">
-        <input 
-          v-model="printerInfo.com" 
-          placeholder="Ej: COM3" 
-          class="p-2 rounded bg-[#081026] text-white" />
-      </div>
+        <div v-if="printerType === 'com'" class="flex items-center gap-2">
+          <input 
+            v-model="printerInfo.com" 
+            placeholder="Ej: COM3" 
+            class="p-2 rounded bg-[#081026] text-white" />
+        </div>
         <button @click="listPrinters" class="px-3 py-2 bg-[var(--accent)] rounded text-black">Listar</button>
         <button @click="listUsbDevices" class="px-3 py-2 bg-blue-500 rounded text-black">Detectar USB</button>
         <button @click="detectScanners" class="px-3 py-2 bg-gray-600 rounded text-black">Detectar escáneres</button>
@@ -52,7 +51,6 @@
       </div>
     </div>
 
-    <!-- VOUCHER -->
     <div v-if="sessionMode === 'voucher'" class="mb-4 p-4 bg-[var(--panel)] rounded">
       <h4 class="text-white mb-2">Modo Voucher — selecciona impresora o ingresa número</h4>
       <div class="flex gap-2 items-center">
@@ -66,7 +64,6 @@
       </div>
     </div>
 
-    <!-- MAIN -->
     <div class="grid grid-cols-3 gap-6">
       <div class="col-span-2">
         <div class="p-4 bg-[var(--panel)] rounded mb-4">
@@ -207,7 +204,6 @@ async function listPrinters() {
   try {
     console.log('Listando impresoras (electron)...')
     const list = await window.electronAPI?.listSystemPrinters?.()
-    // puede venir array de strings o array de objetos
     printers.value = Array.isArray(list)
       ? list.map(p => (typeof p === 'string' ? p : p.name || JSON.stringify(p)))
       : []
@@ -221,7 +217,6 @@ async function listPrinters() {
 async function listUsbDevices() {
   try {
     const list = await window.electronAPI?.listUsbDevices?.()
-    // tu handler devuelve objetos con name/isUSB/status
     usbDevices.value = Array.isArray(list)
       ? list.map(d => (d.name || d.product || JSON.stringify(d)))
       : []
@@ -279,33 +274,21 @@ function recalcLine(it) { it.subtotal = it.cantidad * it.precio }
 function clear() { cart.value = []; ventaResult.value = null; voucherLoaded.value = null; voucherNumber.value = '' }
 const total = computed(() => cart.value.reduce((a, b) => a + (b.subtotal || 0), 0))
 
-/**
- * Normaliza la respuesta del backend para construir el objeto 'sale' que espera electron:
- * sale = { empresa, venta, detalles, total }
- */
-function normalizeSaleFromBackend(resp) {
-  // resp puede ser: { venta, ticket, empresa, detalles, total } o { ticketBase64, venta, ... }
-  const data = resp?.data ?? resp
-
-  // preferir campos explícitos, si no usar cart/local
-  const venta = data?.venta || data?.sale?.venta || data?.venta || { id_venta: data?.venta?.id_venta }
-  const empresa = data?.empresa || data?.venta?.empresa || data?.sale?.empresa || {}
-  const detalles = data?.detalles || data?.venta?.detalles || data?.sale?.detalles || cart.value.map(i => ({
-    id_producto: i.id_producto,
-    nombre: i.nombre,
-    cantidad: i.cantidad,
-    precio_unitario: i.precio || i.precio_unitario,
-  }))
-  const tot = data?.total ?? data?.venta?.total ?? total.value
-
-  return { empresa, venta: venta || {}, detalles: detalles || [], total: tot || 0, rawBackend: data }
-}
-
-// CHECKOUT -> emitirVenta (registro + ticket)
+// ------------------------------------------------------------------
+// FUNCIÓN CHECKOUT MODIFICADA PARA INTEGRAR EL SALEFORPRINTER
+// ------------------------------------------------------------------
 async function checkout() {
   if (cart.value.length === 0) return alert('Carrito vacío')
 
+  // 1. LEER LA SESIÓN DEL STORAGE
+  const sessionStr = localStorage.getItem('session')
+  if (!sessionStr) return alert('Sesión expirada, reinicia login')
+  
+  const session = JSON.parse(sessionStr)
   const user = currentUser.value ?? {}
+  // AQUÍ SACAMOS LOS DATOS GUARDADOS DE LA EMPRESA
+  const empresa = session.empresa || {} 
+
   const detallesPayload = cart.value.map(i => ({
     id_producto: i.id_producto,
     cantidad: i.cantidad,
@@ -327,27 +310,49 @@ async function checkout() {
 
   try {
     const resp = await emitirVenta(payload)
-    const data = resp?.data ?? resp
+    const data = resp?.data ?? resp 
+    
     if (!data) { alert('Respuesta inválida del backend'); return }
 
-    // guardar resultado bruto para preview
     ventaResult.value = data
 
-    // construir objeto sale para enviar a electron
-    const sale = normalizeSaleFromBackend(data)
+    const saleForPrinter = {
+      empresa: {
+          razonSocial: empresa.nombre || empresa.razonSocial || 'Sin Nombre',
+          rut: empresa.rut || 'Sin Rut',
+          direccion: empresa.direccion || '',
+          ciudad: empresa.ciudad || '',
+          telefono: empresa.telefono || ''
+          // logo: empresa.logoUrl ... 
+      },
+      venta: { 
+         id_venta: data.venta?.id_venta || data.id_venta || 'PENDIENTE',
+         fecha: new Date().toLocaleString('es-CL'),
+         timbre: data.timbre || null 
+      },
+      detalles: cart.value.map(i => ({
+         nombre: i.nombre,
+         cantidad: i.cantidad,
+         precio_unitario: i.precio,
+         subtotal: i.precio * i.cantidad
+      })),
+      total: total.value
+    }
 
-    // si electron expone printFromData, usarlo (preferido)
     if (window.electronAPI?.printFromData) {
       try {
+        const content417 = data.timbre || `VENTA-${saleForPrinter.venta.id_venta}`;
         const options = {
           type: printerType.value,
           ip: printerInfo.value.ip,
           port: printerInfo.value.port,
           printerName: selectedPrinter.value || null,
-          codepage: undefined
+          content417: content417 
         }
-        const r = await window.electronAPI.printFromData(sale, options)
+        
+        const r = await window.electronAPI.printFromData(saleForPrinter, options)
         console.log('printFromData:', r)
+        
         if (r?.ok) {
           alert('Venta emitida e impresa (electron).')
           cart.value = []
@@ -360,7 +365,6 @@ async function checkout() {
       }
     }
 
-    // fallback 1: si backend devolvió ticketBase64 usar printRaw
     const ticketBase64 = data?.ticketBase64 || data?.ticket?.ticketBase64 || data?.ticket?.boletaBase64
     if (ticketBase64 && window.electronAPI?.printRaw) {
       try {
@@ -371,7 +375,6 @@ async function checkout() {
           printer: selectedPrinter.value || null
         }
         const r2 = await window.electronAPI.printRaw(ticketBase64, options)
-        console.log('printRaw fallback:', r2)
         if (r2?.ok) {
           alert('Venta emitida e impresa (fallback printRaw).')
           cart.value = []
@@ -382,7 +385,6 @@ async function checkout() {
       }
     }
 
-    // último recurso: mostrar preview y notificar
     alert('Venta emitida. Preview disponible en la UI.')
     cart.value = []
   } catch (err) {
@@ -400,31 +402,29 @@ function hexToBase64(hex) {
 
 async function testPrint() {
   try {
-    // si tienes printFromData disponible, crea un sale/simulado
     const demoSale = {
       empresa: { razonSocial: 'Demo S.A.', rut: '99.999.999-9', direccion: 'Demo 123', comuna: 'Demo', ciudad: 'Demo' },
       venta: { id_venta: 'TEST-001', fecha: new Date().toLocaleString('es-CL') },
       detalles: [
-        { id_producto: 1, nombre: 'Producto A', cantidad: 1, precio_unitario: 1200 },
-        { id_producto: 2, nombre: 'Producto B', cantidad: 2, precio_unitario: 800 }
+        { id_producto: 1, nombre: 'Producto A', cantidad: 1, precio_unitario: 1200, subtotal: 1200 },
+        { id_producto: 2, nombre: 'Producto B', cantidad: 2, precio_unitario: 800, subtotal: 1600 }
       ],
-      total: 1200 + 2 * 800
+      total: 1200 + 1600
     }
 
     if (window.electronAPI?.printFromData) {
-      const options = { type: printerType.value, ip: printerInfo.value.ip, port: printerInfo.value.port, printerName: selectedPrinter.value || null }
+      const options = { 
+         type: printerType.value, 
+         ip: printerInfo.value.ip, 
+         port: printerInfo.value.port, 
+         printerName: selectedPrinter.value || null,
+         content417: "TEST-PDF417-CONTENT" 
+      }
       const r = await window.electronAPI.printFromData(demoSale, options)
       console.log('test printFromData:', r)
       alert('Intento de impresión de prueba enviado (printFromData). Revisa consola.')
       return
     }
-
-    // fallback: pequeña cadena ESC/POS hex convertida a base64
-    const base64Ticket = hexToBase64("1B4068656C6C6F20776F726C640A1D564200")
-    const options = { type: printerType.value, ip: printerInfo.value.ip, port: printerInfo.value.port }
-    const result = await window.electronAPI?.printRaw?.(base64Ticket, options)
-    console.log("Resultado impresión fallback:", result)
-    alert("Ticket de prueba (fallback) enviado.")
   } catch (err) {
     console.error("Error al imprimir test:", err)
     alert("Error al imprimir. Revisa consola.")
@@ -464,7 +464,6 @@ async function discoverLan() {
     }
 
     const resp = await window.electronAPI?.discoverLanPrinters?.(scanOptions)
-    // tu handler devuelve { results, elapsedMs } en la versión nueva
     const results = resp?.results ?? resp
     if (Array.isArray(results) && results.length > 0) {
       printerInfo.value.ip = results[0].ip

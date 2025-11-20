@@ -3,7 +3,6 @@ import net from 'net'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import os from 'os'
-import arp from 'node-arp'
 import fs from 'fs'
 import fsExtra from 'fs-extra'
 import PDFDocument from 'pdfkit'
@@ -12,7 +11,8 @@ import bwipjs from 'bwip-js'
 import pkg from 'pdf-to-printer'
 const { print, getPrinters } = pkg
 import path from 'path'
-
+import Jimp from 'jimp';
+let cachedLogoBuffer = null;
 const require = createRequire(import.meta.url)
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,7 +28,16 @@ const ESC_INIT_LATIN = Buffer.from([0x1B, 0x40, // ESC @ reset
 
 const PAGE_WIDTH_PTS = 220
 const DEFAULT_LOGO = path.join(process.cwd(), 'src', 'venta', 'CocaCola.png')
-
+const CMD = {
+  INIT: Buffer.from([0x1B, 0x40]),
+  ALIGN_LEFT: Buffer.from([0x1B, 0x61, 0x00]),
+  ALIGN_CENTER: Buffer.from([0x1B, 0x61, 0x01]),
+  ALIGN_RIGHT: Buffer.from([0x1B, 0x61, 0x02]),
+  BOLD_ON: Buffer.from([0x1B, 0x45, 0x01]),
+  BOLD_OFF: Buffer.from([0x1B, 0x45, 0x00]),
+  CUT: Buffer.from([0x1D, 0x56, 0x42, 0x00]),
+  LF: Buffer.from([0x0A]),
+};
 // -------------------- UTILIDADES --------------------
 function esc(hexes) {
   return Buffer.from(hexes)
@@ -45,49 +54,6 @@ function formatCLP(v) {
 function padRight(s, len) { return String(s || '').padEnd(len).slice(0, len) }
 function padLeft(s, len) { return String(s || '').padStart(len).slice(-len) }
 
-// -------------------- VENTANA --------------------
-function createWindow() {
-  const isDev = process.env.NODE_ENV !== 'production';
-  const devUrl = process.env.ELECTRON_DEV_URL || 'http://147.182.245.46/';
-
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false, // mejora estética al iniciar
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
-  });
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
-
-  if (isDev) {
-    // 👉 Modo desarrollo: carga URL remota
-    mainWindow.loadURL(devUrl).catch(err => {
-      console.error('Error cargando dev URL:', err);
-    });
-  } else {
-    // 👉 Modo producción: carga el index.html producido por Vite
-    const indexPath = path.join(__dirname, 'web', 'dist', 'index.html');
-
-    mainWindow.loadFile(indexPath).catch(err => {
-      console.error('Error cargando dist/index.html, usando devUrl:', err);
-      mainWindow.loadURL(devUrl);
-    });
-  }
-
-  // Seguridad opcional
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-}
-
-
-app.whenReady().then(createWindow)
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 
 // -------------------- GENERAR PDF (preview) --------------------
 async function renderEscposToPdf(ticketBase64, outPath, opts = {}) {
@@ -173,7 +139,7 @@ async function saveBoletaLocally(venta, pdfBuffer, xmlContent) {
 }
 
 // -------------------- ARMAR TICKET (ESC/POS) --------------------
-function buildTicketBuffer({ empresa = {}, venta = {}, detalles = [], total = 0, codepage = DEFAULT_CODEPAGE, includeLogoBase64 = false }) {
+async function buildTicketBuffer({ empresa = {}, venta = {}, detalles = [], total = 0, codepage = DEFAULT_CODEPAGE, includeLogoBase64 = false }) {
   const ANCHO_TOTAL = 42
   const ANCHO_PRECIO = 12
   const ANCHO_NOMBRE = ANCHO_TOTAL - ANCHO_PRECIO
@@ -199,9 +165,21 @@ function buildTicketBuffer({ empresa = {}, venta = {}, detalles = [], total = 0,
   buffers.push(textBuf(`BOLETA Nº ${venta.id_venta || '000000'}\n`, codepage))
   buffers.push(BOLD_OFF)
 
-  if (includeLogoBase64 && empresa.logoBase64) {
-    // no insert binary image raw into ESC/POS here — we provide base64 for preview only
-    buffers.push(textBuf(`[LOGO_BASE64]\n`, codepage))
+  if (cachedLogoBuffer) {
+      buffers.push(CMD.ALIGN_CENTER);
+      buffers.push(cachedLogoBuffer); // Usar el raster ya procesado
+  } 
+  // Fallback: Si no hay caché pero envían ruta en data.empresa.logo_url
+  else if (data.empresa?.logo_url) {
+      // Intento on-the-fly (puede demorar 1 seg la primera vez)
+      try {
+          const raster = await processLogoForThermal(data.empresa.logo_url);
+          if (raster) {
+              cachedLogoBuffer = raster; // Guardar para la próxima
+              buffers.push(CMD.ALIGN_CENTER);
+              buffers.push(raster);
+          }
+      } catch(e) {}
   }
 
   buffers.push(textBuf(`${empresa.direccion || ''}, ${empresa.comuna || ''}\n`, codepage))
@@ -532,96 +510,302 @@ ipcMain.handle("printRaw", async (event, base64Data, options = {}) => {
   }
 });
 // ---- Construir ticket desde datos (devuelve base64 + preview) ----
-ipcMain.handle('buildTicket', async (event, sale = {}, opts = {}) => {
-  try {
-    // sale: { empresa, venta, detalles, total }
-    const ticketBuffer = buildTicketBuffer({
-      empresa: sale.empresa || {},
-      venta: sale.venta || {},
-      detalles: sale.detalles || [],
-      total: sale.total || 0,
-      codepage: opts.codepage || DEFAULT_CODEPAGE,
-      includeLogoBase64: !!opts.includeLogo
-    });
+function encode(text) {
+  return iconv.encode(text || '', DEFAULT_CODEPAGE);
+}
 
-    const ticketBase64 = ticketBuffer.toString('base64');
-    const textPreview = iconv.decode(ticketBuffer, opts.codepage || DEFAULT_CODEPAGE);
+function formatCLP(num) {
+  return '$ ' + new Intl.NumberFormat('es-CL').format(num);
+}
 
-    // genera preview PDF opcionalmente
-    const tmpPdf = path.join(process.env.TEMP || __dirname, `ticket_preview_${Date.now()}.pdf`);
-    try {
-      await renderEscposToPdf(ticketBase64, tmpPdf, {
-        pdf417Base64: opts.pdf417Base64 || null,
-        codepage: opts.codepage || DEFAULT_CODEPAGE,
-        logoPath: opts.logoPath || DEFAULT_LOGO
-      });
-    } catch (e) { /* no crítico */ }
+// Función para centrar texto con relleno
+function centerText(text, width = PRINTER_WIDTH) {
+  const t = text.toString();
+  if (t.length >= width) return t.substring(0, width);
+  const padLeft = Math.floor((width - t.length) / 2);
+  return ' '.repeat(padLeft) + t;
+}
 
-    return { ok: true, ticketBase64, textPreview, previewPath: tmpPdf };
-  } catch (err) {
-    console.error('buildTicket error', err);
-    return { ok: false, error: String(err) };
+// Función para columnas: "Producto..... $1000"
+function twoColumns(left, right, width = PRINTER_WIDTH) {
+  const l = String(left);
+  const r = String(right);
+  const space = width - l.length - r.length;
+  if (space < 1) {
+    // Si no cabe, truncar nombre
+    const available = width - r.length - 1;
+    return l.substring(0, available) + ' ' + r;
   }
-});
+  return l + ' '.repeat(space) + r;
+}
 
-// ---- Imprimir a partir de datos estructurados (preferred) ----
-ipcMain.handle('printFromData', async (event, sale = {}, options = {}) => {
-  // sale: { empresa, venta, detalles, total }
-  // options: { type: 'auto'|'lan'|'usb', ip, port, printerName, codepage, pdf417Base64 }
-  const { type = 'auto', ip, port = 9100, printerName, codepage = DEFAULT_CODEPAGE, pdf417Base64 } = options;
-  try {
-    // 1) Construir buffer ESC/POS desde datos
-    const ticketBuffer = buildTicketBuffer({
-      empresa: sale.empresa || {},
-      venta: sale.venta || {},
-      detalles: sale.detalles || [],
-      total: sale.total || 0,
-      codepage,
-      includeLogoBase64: !!sale.empresa?.logoBase64
-    });
+// --- CONVERTIR IMAGEN (PNG Buffer) A ESC/POS RASTER ---
+// Esta función convierte los píxeles de una imagen PNG en comandos 'GS v 0'
+function imageToRaster(pngBuffer) {
+  const png = PNG.sync.read(pngBuffer);
+  const width = png.width;
+  const height = png.height;
+  
+  // Ancho en bytes (debe ser múltiplo de 8 para alineación)
+  const widthBytes = Math.ceil(width / 8);
+  
+  const buffer = [];
+  // Comando GS v 0 (Raster Bit Image)
+  // Header: 0x1D 0x76 0x30 0x00 xL xH yL yH
+  buffer.push(0x1D, 0x76, 0x30, 0x00);
+  buffer.push(widthBytes % 256, Math.floor(widthBytes / 256));
+  buffer.push(height % 256, Math.floor(height / 256));
 
-    // 2) Generar preview PDF y guardar boleta (igual que antes)
-    const tmpPdf = path.join(process.env.TEMP || __dirname, `ticket_print_${Date.now()}.pdf`);
-    try { await renderEscposToPdf(ticketBuffer.toString('base64'), tmpPdf, { codepage, pdf417Base64 }); } catch(_) {}
-
-    try {
-      const pdfBuf = fs.existsSync(tmpPdf) ? fs.readFileSync(tmpPdf) : Buffer.alloc(0);
-      const xml = `<boleta><empresa>${sale.empresa?.razonSocial || ''}</empresa><id>${sale.venta?.id_venta || ''}</id><total>${sale.total || 0}</total></boleta>`;
-      await saveBoletaLocally(sale.venta || {}, pdfBuf, xml);
-    } catch(e) { console.warn('saveBoleta fail', e.message) }
-
-    // 3) Intentar imprimir por el medio indicado (LAN -> USB -> PDF fallback)
-    // LAN
-    if (type === 'lan' && ip) {
-      await sendToLan(ip, port, ticketBuffer);
-      fs.existsSync(tmpPdf) && fs.unlinkSync(tmpPdf);
-      return { ok: true, msg: 'enviado: lan' };
-    }
-
-    // USB (escpos)
-    if (type === 'usb' || type === 'auto') {
-      try {
-        await printViaUSB(ticketBuffer);
-        fs.existsSync(tmpPdf) && fs.unlinkSync(tmpPdf);
-        return { ok: true, msg: 'enviado: usb' };
-      } catch (e) {
-        console.warn('printViaUSB failed, will try pdf fallback', e.message || e);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < widthBytes; x++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = (x * 8) + bit;
+        if (px < width) {
+          const idx = (width * y + px) << 2;
+          // Simple umbral para blanco/negro (si alpha > 128 y luminosidad < 128 -> negro)
+          const alpha = png.data[idx + 3];
+          const r = png.data[idx];
+          const g = png.data[idx + 1];
+          const b = png.data[idx + 2];
+          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          
+          // Bit es 1 si es negro (imprimir), 0 si es blanco (papel)
+          if (alpha > 128 && lum < 128) {
+            byte |= (1 << (7 - bit));
+          }
+        }
       }
+      buffer.push(byte);
+    }
+  }
+  return Buffer.from(buffer);
+}
+
+// --- CONSTRUCTOR DEL TICKET ---
+async function buildTicketBuffer(data, opts = {}) {
+  const { empresa, venta, detalles, total } = data;
+  const buffers = [];
+
+  // 1. INIT
+  buffers.push(CMD.INIT);
+
+  // 2. LOGO (Si existe en assets locales)
+  // const logoPath = path.join(__dirname, 'assets', 'logo.png'); 
+  // Si quieres usar logo, descomenta esto y asegura que exista el archivo png pequeño (aprox 300px ancho)
+  /*
+  try {
+    if (fs.existsSync(logoPath)) {
+      const logoPng = fs.readFileSync(logoPath);
+      buffers.push(CMD.ALIGN_CENTER);
+      buffers.push(imageToRaster(logoPng));
+    }
+  } catch(e) { console.error('Error logo', e) }
+  */
+
+  // 3. ENCABEZADO
+  buffers.push(CMD.ALIGN_CENTER);
+  buffers.push(CMD.BOLD_ON);
+  buffers.push(encode(`${empresa.razonSocial || 'EMPRESA DEMO'}\n`));
+  buffers.push(CMD.BOLD_OFF);
+  buffers.push(encode(`RUT: ${empresa.rut || '99.999.999-9'}\n`));
+  buffers.push(encode(`BOLETA ELECTRONICA N° ${venta.id_venta}\n`));
+  buffers.push(encode(`${empresa.direccion || 'Direccion desconocida'}\n`));
+  buffers.push(encode(`Tel: ${empresa.telefono || ''}\n`));
+  buffers.push(encode(`Fecha: ${venta.fecha}\n`));
+  
+  buffers.push(CMD.ALIGN_LEFT);
+  buffers.push(encode("-".repeat(PRINTER_WIDTH) + "\n"));
+
+  buffers.push(encode(twoColumns("CANT DETALLE", "TOTAL") + "\n"));
+  buffers.push(encode("-".repeat(PRINTER_WIDTH) + "\n"));
+
+  // 4. DETALLES
+  detalles.forEach(d => {
+    // Línea 1: Cantidad x Precio
+    buffers.push(encode(`${d.cantidad} x ${formatCLP(d.precio_unitario)}\n`));
+    // Línea 2: Nombre .... Total
+    buffers.push(encode(twoColumns(d.nombre, formatCLP(d.subtotal)) + "\n"));
+  });
+
+  buffers.push(encode("-".repeat(PRINTER_WIDTH) + "\n"));
+
+  // 5. TOTALES
+  const neto = Math.round(total / 1.19);
+  const iva = total - neto;
+
+  buffers.push(CMD.ALIGN_RIGHT);
+  buffers.push(encode(`Neto: ${formatCLP(neto)}\n`));
+  buffers.push(encode(`IVA (19%): ${formatCLP(iva)}\n`));
+  
+  buffers.push(CMD.BOLD_ON);
+  // Doble altura para el total (opcional)
+  buffers.push(Buffer.from([0x1D, 0x21, 0x01])); 
+  buffers.push(encode(`TOTAL: ${formatCLP(total)}\n`));
+  buffers.push(Buffer.from([0x1D, 0x21, 0x00])); // Reset size
+  buffers.push(CMD.BOLD_OFF);
+
+  buffers.push(CMD.ALIGN_CENTER);
+  buffers.push(CMD.LF);
+
+  // 6. PDF417 (Generación dinámica real)
+  try {
+    // El texto del timbre debe venir del SII, aquí usamos el content417 pasado o uno dummy
+    const textToEncode = opts.content417 || `TIMBRE ELECTRONICO SII Res. 80\nITEM1: ${total}`;
+    
+    // Generar PNG en memoria con bwip-js
+    const pdf417Png = await bwipjs.toBuffer({
+      bcid: 'pdf417',       
+      text: textToEncode,
+      scale: 2,             // Escala ajustada para térmica (2 o 3)
+      height: 10,           // Altura relativa
+      includetext: false,
+      padding: 10,
+      backgroundcolor: 'ffffff'
+    });
+
+    // Convertir a comandos ESC/POS Raster y agregar al buffer
+    buffers.push(imageToRaster(pdf417Png));
+
+  } catch (err) {
+    console.error("Error generando PDF417:", err);
+    buffers.push(encode("[Error Timbre]\n"));
+  }
+
+  buffers.push(CMD.LF);
+  buffers.push(CMD.BOLD_ON);
+  buffers.push(encode("TIMBRE ELECTRONICO SII\n"));
+  buffers.push(CMD.BOLD_OFF);
+  buffers.push(encode("Res. NRO.80 de 22-08-2014\n"));
+  buffers.push(encode("Verifique documento en www.sii.cl\n"));
+  buffers.push(CMD.LF);
+  buffers.push(encode("GRACIAS POR SU COMPRA\n"));
+  buffers.push(CMD.LF);
+  buffers.push(CMD.LF);
+  
+  // 7. CORTE
+  buffers.push(CMD.CUT);
+
+  return Buffer.concat(buffers);
+}
+
+// --- RED (LAN) ---
+async function sendToLan(ip, port, buffer) {
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket();
+    socket.setTimeout(3000);
+    socket.connect(port, ip, () => {
+      socket.write(buffer, () => {
+        socket.end();
+        resolve({ ok: true });
+      });
+    });
+    socket.on('error', (err) => reject(err));
+    socket.on('timeout', () => { socket.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
+// --- USB (Escpos Module) ---
+async function sendToUsb(buffer) {
+  // Usamos el módulo escpos solo para el transporte Raw
+  // Asume que tienes un device USB conectado
+  try {
+    const escpos = require('escpos');
+    escpos.USB = require('escpos-usb');
+    const device = new escpos.USB();
+    const printer = new escpos.Printer(device);
+    
+    return new Promise((resolve, reject) => {
+        device.open((err) => {
+            if(err) return reject(err);
+            printer.raw(buffer); // Enviamos nuestro buffer manual
+            printer.close();
+            resolve({ok: true});
+        });
+    });
+  } catch(e) {
+      throw new Error("Error USB: " + e.message);
+  }
+}
+
+// --- HANDLERS ---
+ipcMain.handle('printFromData', async (event, sale, opts) => {
+  try {
+    console.log("Generando ticket...");
+    // 1. Construir buffer binario (Textos + Imagen Rasterizada)
+    const buffer = await buildTicketBuffer(sale, { content417: opts.content417 });
+
+    // 2. Enviar
+    if (opts.type === 'lan') {
+      await sendToLan(opts.ip, opts.port || 9100, buffer);
+    } else {
+      await sendToUsb(buffer);
     }
 
-    // Fallback PDF print
-    try {
-      await print(tmpPdf, { printer: printerName || null, silent: true });
-      fs.existsSync(tmpPdf) && fs.unlinkSync(tmpPdf);
-      return { ok: true, msg: 'impreso via pdf-to-printer (fallback)' };
-    } catch (err) {
-      console.error('fallback print error', err);
-      return { ok: false, error: String(err) };
-    }
+    return { ok: true };
   } catch (err) {
-    console.error('printFromData error', err);
-    return { ok: false, error: String(err) };
+    console.error("Error impresión:", err);
+    return { ok: false, error: err.message };
   }
 });
+
+function createWindow() {
+    const mainWindow = new BrowserWindow({
+        width: 1000,
+        height: 800,
+        webPreferences: {
+
+    preload: path.join(__dirname, 'preload.cjs'),
+    
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: false // A veces necesario si se usan módulos nativos complejos
+}
+    });
+
+    const isDev = !app.isPackaged; 
+
+    if (isDev) {
+        mainWindow.loadURL('http://147.182.245.46');
+        mainWindow.webContents.openDevTools(); // Ayuda a ver errores en consola
+    } else {
+
+        mainWindow.loadFile(path.join(__dirname, '../web/dist/index.html'));
+    }
+}
+async function processLogoForThermal(urlOrPath) {
+  try {
+    // 1. Leer imagen (soporta URL o Path local)
+    const image = await Jimp.read(urlOrPath);
+    
+    // 2. Redimensionar para ancho de papel (máx 380px para 80mm seguro)
+    image.resize(380, Jimp.AUTO);
+    
+    // 3. Convertir a B/N y aumentar contraste al máximo (Dithering básico)
+    image.greyscale().contrast(1).posterize(2);
+
+    // 4. Obtener buffer PNG procesado
+    const processedBuffer = await image.getBufferAsync(Jimp.MIME_PNG);
+    
+    // 5. Convertir a Raster ESC/POS (usando tu función existente imageToRaster)
+    return imageToRaster(processedBuffer); 
+  } catch (err) {
+    console.error('Error procesando logo thermal:', err);
+    return null;
+  }
+}
+
+// --- NUEVO HANDLER PARA CACHEAR LOGO ---
+ipcMain.handle('cacheLogo', async (event, url) => {
+    console.log('Cacheando logo desde:', url);
+    const rasterBuffer = await processLogoForThermal(url);
+    if (rasterBuffer) {
+        cachedLogoBuffer = rasterBuffer; // Guardar en RAM global
+        return true;
+    }
+    return false;
+});
+app.whenReady().then(createWindow);
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 
 console.log('Electron printing helper ready')

@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // construir ticket o imprimir desde datos JS
   buildTicket: (sale, opts) => ipcRenderer.invoke('buildTicket', sale, opts),
-  printFromData: (sale, options) => ipcRenderer.invoke('printFromData', sale, options)
+  printFromData: (sale, options) => ipcRenderer.invoke('printFromData', sale, options),
+  cacheLogo: (url) => ipcRenderer.invoke('cacheLogo', url),
 });

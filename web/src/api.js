@@ -14,7 +14,10 @@ api.interceptors.request.use(cfg => {
 })
 
 /* ----------------------- AUTH ----------------------- */
-export async function login(creds) { return api.post('/auth/login', creds) }
+export async function login(creds) { 
+  const r = await api.post('/auth/login', creds)
+  return r.data 
+}
 
 /* -------------------- ESTADÍSTICAS ------------------- */
 export async function fetchTopProducts() {
@@ -118,4 +121,16 @@ export const previewMapping = (body) =>
 export const processImport = (body) =>
   api.post('/import/apply', body).then(r => r.data)
 
+export async function fetchEmpresa(id) {
+  const r = await api.get(`/empresas/${id}`) 
+  return r.data
+}
+
+export function uploadEmpresaLogo(idEmpresa, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post(`/empresas/${idEmpresa}/logo`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }).then(r => r.data)
+}
 export { api }

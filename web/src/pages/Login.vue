@@ -1,5 +1,5 @@
 <script setup>
-import { login } from '../api'
+import { login, fetchEmpresa } from '../api'
 import { auth } from '../store/auth'
 import { defineEmits, ref } from 'vue'
 
@@ -7,10 +7,15 @@ const emit = defineEmits(['login-success'])
 const email = ref('')
 const clave = ref('')
 
-function createSession(user, token, minutes = 60) {
+function createSession(user, token, empresa, minutes = 60) {
   const expiresAt = new Date(Date.now() + minutes * 60 * 1000).toISOString()
-  const session = { user, token, expiresAt }
-  localStorage.setItem('session', JSON.stringify(session))
+  
+  const session = { user, token, empresa, expiresAt }
+  
+  localStorage.setItem('session', JSON.stringify(session)) 
+  
+  localStorage.setItem('token', token) 
+  
   auth.setSession(user, token)
   return session
 }
@@ -22,16 +27,32 @@ async function doLogin() {
   }
 
   try {
-    const res = await login({ email: email.value, clave: clave.value })
-    const tok = res.data?.access_token || res.data?.token
-    const user = res.data?.user
+    const data = await login({ email: email.value, clave: clave.value })
+
+    const tok = data.access_token || data.token
+    const user = data.user
 
     if (!tok || !user) {
-      throw new Error('Credenciales inválidas')
+      throw new Error('Respuesta de login incompleta')
     }
 
-    const session = createSession(user, tok)
+    let empresaFull = data.empresa || user.empresa
+
+    if (!empresaFull && user.id_empresa) {
+        try {
+            console.log('Obteniendo datos de empresa...')
+            const respEmpresa = await fetchEmpresa(user.id_empresa)
+            empresaFull = respEmpresa
+        } catch (err) {
+            console.warn('No se pudo cargar la empresa', err)
+
+            empresaFull = { razonSocial: 'Empresa Generica', rut: '99.999.999-9' }
+        }
+    }
+
+    const session = createSession(user, tok, empresaFull)
     emit('login-success', session)
+
   } catch (e) {
     console.error('Error de login:', e)
     alert('Usuario o contraseña incorrectos')
