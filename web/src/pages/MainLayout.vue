@@ -1,33 +1,36 @@
 <template>
-  <div class="h-screen w-screen grid grid-rows-[auto_1fr] grid-cols-[240px_1fr] bg-[var(--bg-deep)] text-[var(--text-primary)]">
-    <aside
-      class="row-span-2 bg-[var(--panel)] border-r border-[var(--border)] flex flex-col"
-      :class="{ 'hidden': isSidebarCollapsed }"
-    >
-      <Sidebar 
-        :is-collapsed="isSidebarCollapsed"
-        :user="user"
-        @logout="$emit('logout')"
-      />
-    </aside>
+  <div class="h-screen w-screen flex bg-[var(--bg-deep)] text-[var(--text-primary)] overflow-hidden">
+    
+    <Sidebar 
+      :is-collapsed="isCollapsed"
+      :user="user"
+      @toggle="toggleSidebar"
+      @logout="$emit('logout')"
+    />
 
-    <header class="col-span-2 md:col-span-1 bg-[var(--panel)] border-b border-[var(--border)] flex items-center justify-between px-6 py-3">
-      <Topbar 
-        @toggle-theme="toggleTheme"
-        @toggle-sidebar="toggleSidebar"
-      />
-    </header>
+    <div class="flex-1 flex flex-col min-w-0 transition-all duration-300"
+         :class="{ 'lg:ml-0': !isCollapsed }">
+      
+      <header class="bg-[var(--panel)] border-b border-[var(--border)] flex items-center justify-between px-6 py-3 h-16">
+        <Topbar 
+          @toggle-theme="toggleTheme"
+          @toggle-sidebar="toggleSidebar"
+        />
+      </header>
 
-    <main class="p-6 overflow-y-auto bg-[var(--bg-deep)]">
-      <router-view />
-    </main>
+      <main class="flex-1 p-4 lg:p-6 overflow-y-auto relative bg-[var(--bg-deep)]">
+        <router-view />
+      </main>
+    </div>
+
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue' // <--- AGREGADO onMounted
+import { ref, onMounted, onUnmounted } from 'vue'
 import Sidebar from '../components/Sidebar.vue'
 import Topbar from '../components/Topbar.vue'
+import { auth } from '../store/auth' // Asegúrate de tener el store
 
 const props = defineProps({
   user: Object
@@ -35,10 +38,11 @@ const props = defineProps({
 
 const emit = defineEmits(['logout'])
 
-const isSidebarCollapsed = ref(false)
+// Estado inicial: En móvil cerrado (true), en desktop abierto (false)
+const isCollapsed = ref(window.innerWidth < 1024)
 
 function toggleSidebar() {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
+  isCollapsed.value = !isCollapsed.value
 }
 
 function toggleTheme() {
@@ -47,8 +51,16 @@ function toggleTheme() {
   html.classList.toggle('dark', current === 'dark')
 }
 
-// --- LÓGICA DE CACHÉ DE IMPRESORA ---
+// Listener para ajustar sidebar si cambian el tamaño de la ventana
+function handleResize() {
+    if (window.innerWidth < 1024) isCollapsed.value = true
+    else isCollapsed.value = false
+}
+
+// --- LÓGICA DE CACHÉ DE IMPRESORA Y EVENTOS ---
 onMounted(async () => {
+    window.addEventListener('resize', handleResize)
+
     // Intentar leer la sesión para obtener la URL del logo
     const sessionStr = localStorage.getItem('session');
     if (sessionStr) {
@@ -58,11 +70,10 @@ onMounted(async () => {
             if (session?.empresa?.logo_url) {
                 console.log('MainLayout: Iniciando carga de logo en memoria de impresora...');
                 
-                // Llamada segura a Electron (si existe el handler)
                 if (window.electronAPI?.cacheLogo) {
                     const ok = await window.electronAPI.cacheLogo(session.empresa.logo_url);
-                    if (ok) console.log('Logo procesado y listo en RAM para impresión térmica');
-                    else console.warn('No se pudo procesar el logo para impresión');
+                    if (ok) console.log('✅ Logo procesado y listo en RAM para impresión térmica');
+                    else console.warn('⚠️ No se pudo procesar el logo para impresión');
                 }
             }
         } catch (e) {
@@ -70,4 +81,8 @@ onMounted(async () => {
         }
     }
 });
+
+onUnmounted(() => {
+    window.removeEventListener('resize', handleResize)
+})
 </script>

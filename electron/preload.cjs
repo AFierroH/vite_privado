@@ -2,15 +2,14 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
-  listSystemPrinters: () => ipcRenderer.invoke('listSystemPrinters'),
   listUsbDevices: () => ipcRenderer.invoke('listUsbDevices'),
-  detectScanners: () => ipcRenderer.invoke('detectScanners'),
+  listSystemPrinters: () => ipcRenderer.invoke('listSystemPrinters'),
   pingPrinter: (ip, port) => ipcRenderer.invoke('pingPrinter', ip, port),
-  printRaw: (data, options) => ipcRenderer.invoke('printRaw', data, options),
-  discoverLanPrinters: (options) => ipcRenderer.invoke('discover-lan-printers', options),
-  
-  // construir ticket o imprimir desde datos JS
+  printRaw: (data, opts) => ipcRenderer.invoke('printRaw', data, opts),
+  detectScanners: () => ipcRenderer.invoke('detectScanners'),
+  discoverLanPrinters: (opts) => ipcRenderer.invoke('discover-lan-printers', opts),
+
   buildTicket: (sale, opts) => ipcRenderer.invoke('buildTicket', sale, opts),
-  printFromData: (sale, options) => ipcRenderer.invoke('printFromData', sale, options),
+  printFromData: (sale, opts) => ipcRenderer.invoke('printFromData', sale, opts),
   cacheLogo: (url) => ipcRenderer.invoke('cacheLogo', url),
 });
