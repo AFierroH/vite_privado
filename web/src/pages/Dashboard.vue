@@ -67,7 +67,7 @@ function setRange(t) {
 
 async function loadData() {
   try {
-    const res = await axios.get(`http://147.182.245.46:3000/estadisticas?rango=${range.value}`)
+    const res = await axios.get(`http://147.182.245.46:3000/api/estadisticas?rango=${range.value}`)
     ventasPorDia.value = res.data.ventas_por_dia
     productos.value = res.data.productos_top
     categorias.value = res.data.categorias

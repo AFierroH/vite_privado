@@ -97,7 +97,7 @@ export async function emitirVenta(payload) {
 
 export async function fetchVoucher(numero) {
   const r = await api.get('/vouchers/', { params: { numero } })
-  return r.data // <= siempre consistente
+  return r.data 
 }
 
 /* ----------------------- IMPORT ----------------------- */
