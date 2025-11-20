@@ -1,38 +1,38 @@
 <template>
-  <div class="min-h-screen w-full grid grid-rows-[auto_1fr_auto] gap-4 p-6 text-[var(--text-primary)] bg-[var(--bg-deep)] overflow-y-auto">
+  <div class="h-full w-full grid grid-rows-[auto_1fr] gap-4 p-6 text-[var(--text-primary)] bg-[var(--bg-deep)]">
     <h1 class="text-2xl font-bold">Importador - Mapear tablas</h1>
 
-    <!-- CONTENIDO PRINCIPAL CON SCROLL -->
-    <div class="overflow-y-auto flex flex-col gap-6">
-      <!-- Sección 1: Subir archivo -->
-      <section class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg">
+    <div class="flex flex-col gap-6 overflow-y-auto pr-2">
+      
+      <section class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg shadow-sm">
         <label class="block mb-2 font-medium">1) Subir archivo .sql</label>
-        <input type="file" accept=".sql" @change="onFileChange" class="text-sm" />
-        <button
-          class="ml-2 px-3 py-1 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg text-sm"
-          @click="upload"
-          :disabled="!file"
-        >
-          Subir
-        </button>
-        <div v-if="uploadId" class="mt-2 text-sm text-green-400">
+        <div class="flex gap-2 items-center">
+            <input type="file" accept=".sql" @change="onFileChange" class="text-sm text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[var(--accent)] file:text-white hover:file:opacity-90" />
+            <button
+              class="px-4 py-2 bg-[var(--accent)] text-[var(--text-on-accent)] rounded-lg text-sm font-bold disabled:opacity-50"
+              @click="upload"
+              :disabled="!file"
+            >
+              Subir
+            </button>
+        </div>
+        <div v-if="uploadId" class="mt-2 text-sm text-green-500 font-mono">
           Upload ID: {{ uploadId }}
         </div>
       </section>
 
-      <!-- Sección 2: Mapeo -->
-      <<section
-  v-if="parsedTables.length"
-  class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg flex flex-col gap-4 flex-1 overflow-y-auto"
->
-        <label class="block font-medium">2) Elegir tablas</label>
+      <section
+        v-if="parsedTables.length"
+        class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg flex flex-col gap-4"
+      >
+        <label class="block font-medium border-b border-[var(--border)] pb-2">2) Elegir tablas y Columnas</label>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium mb-1">Tabla destino (mi BD)</label>
+            <label class="block text-sm font-medium mb-1 text-[var(--muted)]">Tabla destino (Mi BD)</label>
             <select
               v-model="selectedDestTable"
-              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--input-bg)] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               @change="onDestChange"
             >
               <option value="">-- elegir tabla destino --</option>
@@ -40,10 +40,10 @@
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Tabla origen (archivo importado)</label>
+            <label class="block text-sm font-medium mb-1 text-[var(--muted)]">Tabla origen (SQL)</label>
             <select
               v-model="selectedSourceTable"
-              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              class="w-full p-2 border border-[var(--border)] rounded-lg bg-[var(--input-bg)] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               @change="onSourceChange"
             >
               <option value="">-- elegir tabla origen --</option>
@@ -54,83 +54,39 @@
           </div>
         </div>
 
-        <!-- Mapeo -->
-        <div
-          v-if="selectedDestTable && selectedSourceTable"
-          class="border-t border-[var(--border)] pt-4 flex flex-col gap-3 max-h-[60vh] overflow-y-auto"
-        >
-          <h3 class="font-semibold text-lg">3) Mapear columnas</h3>
+        <div v-if="selectedDestTable && selectedSourceTable" class="flex flex-col gap-3 mt-2">
+          <h3 class="font-semibold text-lg text-[var(--text-primary)]">3) Mapear columnas</h3>
 
-          <div
-            v-for="destField in destSchema[selectedDestTable]"
-            :key="destField"
-            class="flex flex-col sm:flex-row gap-2 items-center"
-          >
+          <div v-for="destField in destSchema[selectedDestTable]" :key="destField" class="flex flex-col sm:flex-row gap-2 items-center p-2 bg-[var(--bg-deep)] rounded border border-[var(--border)]">
             <div class="w-full sm:w-48 font-medium text-sm text-[var(--muted)]">{{ destField }}</div>
             <select
               v-model="mapping[destField]"
-              class="flex-1 p-2 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              class="flex-1 p-2 border border-[var(--border)] rounded bg-[var(--input-bg)] text-[var(--text-primary)] outline-none"
             >
               <option value="">-- no asignado --</option>
-              <option value="__skip">-- SKIP --</option>
+              <option value="__skip" class="text-red-400">-- SKIP --</option>
               <option v-for="col in sourceColumns" :key="col" :value="col">{{ col }}</option>
-              <option value="__static">-- valor estático --</option>
+              <option value="__static" class="text-blue-400">-- valor estático --</option>
             </select>
 
             <input
               v-if="mapping[destField] === '__static'"
               v-model="staticValues[destField]"
-              placeholder="valor estático"
-              class="p-2 w-32 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)]"
+              placeholder="Valor fijo"
+              class="p-2 w-32 border border-[var(--border)] rounded bg-[var(--input-bg)] text-[var(--text-primary)] outline-none"
             />
           </div>
 
           <div class="flex flex-wrap gap-2 mt-4">
-            <button class="px-4 py-2 bg-green-600 text-white rounded-lg" @click="preview">
+            <button class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg shadow" @click="preview">
               Previsualizar
             </button>
-            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg" @click="finalizeImport">
-              Importar (simulado)
+            <button class="px-4 py-2 bg-[var(--accent)] text-white rounded-lg shadow" @click="finalizeImport">
+              Importar
             </button>
           </div>
-
-          <!-- Preview -->
-          <div
-            v-if="previewResult"
-            class="mt-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--bg-deep)] overflow-auto"
-          >
-            <h4 class="font-semibold mb-2">Previsualización</h4>
-            <table class="w-full table-auto text-sm">
-              <thead>
-                <tr class="bg-[var(--panel)]">
-                  <th v-for="h in previewHeader" :key="h" class="border border-[var(--border)] px-2 py-1">
-                    {{ h }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(r, idx) in previewResult.preview" :key="idx">
-                  <td v-for="h in previewHeader" :key="h" class="border border-[var(--border)] px-2 py-1">
-                    {{ r[h] ?? '' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          
           </div>
-        </div>
-      </section>
-
-      <!-- Tablas detectadas -->
-      <section
-        v-if="parsedTables.length"
-        class="p-4 bg-[var(--panel)] border border-[var(--border)] rounded-lg"
-      >
-        <h2 class="font-semibold mb-2">Tablas detectadas</h2>
-        <ul class="text-sm space-y-1">
-          <li v-for="t in parsedTables" :key="t.name">
-            <strong>{{ t.name }}</strong> — <span class="text-[var(--muted)]">{{ t.columns.join(', ') }}</span>
-          </li>
-        </ul>
       </section>
     </div>
   </div>

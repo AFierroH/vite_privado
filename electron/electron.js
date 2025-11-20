@@ -2,231 +2,266 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
-import iconv from 'iconv-lite';
-import bwipjs from 'bwip-js';
-import { PNG } from 'pngjs';
+import fs from 'fs';
 
+// Importaciones de Hardware
 const require = createRequire(import.meta.url);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// 1. IMPORTAR SUITE ESCPOS
 const escpos = require('escpos');
 escpos.USB = require('escpos-usb');
 escpos.Network = require('escpos-network');
-
-// Importar 'usb' para listar dispositivos manualmente en el frontend
-const usbManager = require('usb'); 
-
 const Jimp = require('jimp');
 
-// -------------------- CONFIGURACIÓN --------------------
+// Configurar path
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Variables Globales
 let mainWindow = null;
-let cachedLogoBuffer = null; 
-const DEFAULT_CODEPAGE = 'cp1252'; 
-const PRINTER_WIDTH = 42; 
+let cachedLogoImage = null; // Guardaremos la instancia de imagen cargada
 
-const CMD = {
-  INIT: Buffer.from([0x1B, 0x40]),
-  ALIGN_CENTER: Buffer.from([0x1B, 0x61, 0x01]),
-  ALIGN_LEFT: Buffer.from([0x1B, 0x61, 0x00]),
-  ALIGN_RIGHT: Buffer.from([0x1B, 0x61, 0x02]),
-  BOLD_ON: Buffer.from([0x1B, 0x45, 0x01]),
-  BOLD_OFF: Buffer.from([0x1B, 0x45, 0x00]),
-  CUT: Buffer.from([0x1D, 0x56, 0x42, 0x00]),
-  LF: Buffer.from([0x0A]),
-};
+// ---------------------------------------------------------
+// 1. FUNCIÓN PRINCIPAL DE IMPRESIÓN
+// ---------------------------------------------------------
+async function printTicket(sale, options) {
+    return new Promise(async (resolve, reject) => {
+        let device;
+        
+        try {
+            // --- SELECCIÓN DE DISPOSITIVO ---
+            if (options.type === 'lan' && options.ip) {
+                console.log(`Conectando a RED: ${options.ip}:${options.port || 9100}`);
+                device = new escpos.Network(options.ip, options.port || 9100);
+            } 
+            else if (options.type === 'usb') {
+                if (options.vid && options.pid) {
+                    console.log(`Conectando a USB Específico: VID ${options.vid} PID ${options.pid}`);
+                    device = new escpos.USB(options.vid, options.pid);
+                } else {
+                    console.log(`Auto-detectando primer USB...`);
+                    device = new escpos.USB(); // Auto-detectar
+                }
+            } else {
+                return reject("Tipo de conexión no válido");
+            }
 
-// -------------------- HELPERS GENERACIÓN BYTES --------------------
-function encode(text) { return iconv.encode(text || '', DEFAULT_CODEPAGE); }
-function formatCLP(num) { return '$ ' + new Intl.NumberFormat('es-CL').format(num); }
+            // --- CONFIGURAR IMPRESORA ---
+            const printer = new escpos.Printer(device, { encoding: "CP858" }); // CP858 o CP1252 para acentos
 
-function twoColumns(left, right, width = PRINTER_WIDTH) {
-  const l = String(left); const r = String(right);
-  const space = width - l.length - r.length;
-  if (space < 1) return l.substring(0, width - r.length - 1) + ' ' + r;
-  return l + ' '.repeat(space) + r;
-}
+            device.open(async function(err) {
+                if (err) {
+                    return reject("No se pudo abrir la impresora. ¿Está conectada? Error: " + err);
+                }
 
-function imageToRaster(pngBuffer) {
-  const png = PNG.sync.read(pngBuffer);
-  const width = png.width; const height = png.height;
-  const widthBytes = Math.ceil(width / 8);
-  const buffer = [0x1D, 0x76, 0x30, 0x00, widthBytes % 256, Math.floor(widthBytes / 256), height % 256, Math.floor(height / 256)];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < widthBytes; x++) {
-      let byte = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const px = (x * 8) + bit;
-        if (px < width) {
-          const idx = (width * y + px) << 2;
-          const alpha = png.data[idx + 3];
-          const lum = 0.2126 * png.data[idx] + 0.7152 * png.data[idx + 1] + 0.0722 * png.data[idx + 2];
-          if (alpha > 128 && lum < 128) byte |= (1 << (7 - bit));
+                try {
+                    // 1. INICIO
+                    printer
+                        .font('a')
+                        .align('ct')
+                        .style('b'); // Negrita
+
+                    // 2. LOGO (Si existe en caché)
+                    if (cachedLogoImage) {
+                        await printer.image(cachedLogoImage, 's8'); // s8 = densidad estándar
+                    }
+
+                    // 3. ENCABEZADO
+                    printer
+                        .size(1, 1)
+                        .text(sale.empresa.razonSocial || 'EMPRESA')
+                        .style('normal') // Quitar negrita
+                        .size(0.5, 0.5) // Tamaño normal
+                        .text(`RUT: ${sale.empresa.rut || ''}`)
+                        .text(sale.empresa.direccion || '')
+                        .feed(1);
+
+                    printer
+                        .align('lt')
+                        .text('------------------------------------------')
+                        .text(`BOLETA: ${sale.venta.id_venta}`)
+                        .text(`FECHA:  ${sale.venta.fecha}`)
+                        .text('------------------------------------------');
+
+                    // 4. DETALLES
+                    // Cabecera de tabla manual simple
+                    printer.tableCustom([
+                        { text: "CANT", align: "LEFT", width: 0.15 },
+                        { text: "DESCRIPCION", align: "LEFT", width: 0.55 },
+                        { text: "TOTAL", align: "RIGHT", width: 0.30 }
+                    ]);
+                    
+                    sale.detalles.forEach(d => {
+                         // Formatear precio
+                         const totalStr = new Intl.NumberFormat('es-CL').format(d.subtotal);
+                         printer.tableCustom([
+                            { text: String(d.cantidad), align: "LEFT", width: 0.15 },
+                            { text: d.nombre.substring(0, 20), align: "LEFT", width: 0.55 },
+                            { text: totalStr, align: "RIGHT", width: 0.30 }
+                        ]);
+                    });
+
+                    printer.text('------------------------------------------');
+
+                    // 5. TOTALES
+// ------------------------------------------------
+                    // 5. TOTALES (Neto, IVA y Total)
+                    // ------------------------------------------------
+                    const total = sale.total;
+                    const neto = Math.round(total / 1.19);
+                    const iva = total - neto;
+
+                    const totalFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(total);
+                    const netoFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(neto);
+                    const ivaFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(iva);
+                    
+                    printer
+                        .align('rt') // Alinear derecha
+                        .style('normal')
+                        .text(`Neto: ${netoFmt}`)
+                        .text(`IVA (19%): ${ivaFmt}`)
+                        .feed(1); // Un pequeño espacio
+
+                    // EL TOTAL GRANDE
+                    printer
+                        .style('b') // Negrita
+                        .size(1, 1) // Doble tamaño
+                        .text(`TOTAL: ${totalFmt}`)
+                        .size(0.5, 0.5) // Volver a tamaño normal
+                        .style('normal')
+                        .align('ct') // Volver al centro para lo que sigue (QR)
+                        .feed(1);
+                    // 6. PDF417 (Usando QR como alternativa nativa fácil, o código de barras)
+                    // La librería escpos soporta QR nativo, PDF417 nativo depende del modelo.
+                    // Usaremos QR por compatibilidad, o barcode si prefieres.
+                    const timbre = options.content417 || `VENTA-${sale.venta.id_venta}`;
+                    
+                    // Opción A: Intentar imprimir QR nativo (muy compatible)
+                    try {
+                        printer.qrimage(timbre, function(err){
+                             finalizarTicket(this);
+                        });
+                    } catch(e) {
+                        // Si falla QR, finalizar directo
+                        finalizarTicket(printer);
+                    }
+
+                    // Función para cerrar (callback del QR)
+                    function finalizarTicket(p) {
+                        p.text('TIMBRE ELECTRONICO SII')
+                         .text('Verifique en www.sii.cl')
+                         .feed(2)
+                         .cut()
+                         .close(); // IMPORTANTE: Cerrar conexión para liberar USB
+                        resolve({ ok: true });
+                    }
+
+                } catch (printError) {
+                    device.close();
+                    reject(printError);
+                }
+            });
+
+        } catch (e) {
+            reject(e.message);
         }
-      }
-      buffer.push(byte);
+    });
+}
+
+
+// ---------------------------------------------------------
+// 2. HANDLERS IPC (COMUNICACIÓN CON VUE)
+// ---------------------------------------------------------
+
+// A. IMPRIMIR
+ipcMain.handle('printFromData', async (event, sale, opts) => {
+    try {
+        await printTicket(sale, opts);
+        return { ok: true };
+    } catch (error) {
+        console.error("Error imprimiendo:", error);
+        return { ok: false, error: String(error) };
     }
-  }
-  return Buffer.from(buffer);
-}
+});
 
-async function processLogoForThermal(urlOrPath) {
-  try {
-    const image = await Jimp.read(urlOrPath);
-    image.resize(380, Jimp.AUTO).greyscale().contrast(1).posterize(2);
-    return imageToRaster(await image.getBufferAsync(Jimp.MIME_PNG));
-  } catch (err) { return null; }
-}
+// B. CACHEAR LOGO (Cargar imagen con escpos.Image)
+ipcMain.handle('cacheLogo', async (event, url) => {
+    try {
+        console.log('Cargando logo para escpos:', url);
+        // Descargar imagen temporalmente
+        const jimpImg = await Jimp.read(url);
+        jimpImg.scaleToFit(150, 40) 
+               .greyscale(); 
+        
+        const buffer = await jimpImg.getBufferAsync(Jimp.MIME_PNG);
+        
+        const tempPath = path.join(process.env.TEMP || __dirname, 'logo_temp.png');
+        fs.writeFileSync(tempPath, buffer);
 
-// -------------------- CONSTRUCTOR DEL TICKET --------------------
-async function buildTicketBuffer(data, opts = {}) {
-  const { empresa, venta, detalles, total } = data;
-  const buffers = [CMD.INIT, CMD.ALIGN_CENTER];
-  
-  if (cachedLogoBuffer) buffers.push(cachedLogoBuffer);
-  else if (empresa?.logo_url) {
-      const r = await processLogoForThermal(empresa.logo_url);
-      if (r) { cachedLogoBuffer = r; buffers.push(r); }
-  }
+        // Cargar con la clase de escpos
+        escpos.Image.load(tempPath, function(image){
+            cachedLogoImage = image;
+            console.log('Logo cargado en memoria escpos');
+        });
+        return true;
+    } catch (e) {
+        console.error("Error logo:", e);
+        return false;
+    }
+});
 
-  buffers.push(CMD.BOLD_ON, encode(`${empresa.razonSocial || 'EMPRESA'}\n`), CMD.BOLD_OFF);
-  buffers.push(encode(`RUT: ${empresa.rut || '-'}\n`));
-  buffers.push(encode(`${empresa.direccion || ''}\n`));
-  buffers.push(CMD.LF);
-  
-  buffers.push(CMD.ALIGN_LEFT);
-  buffers.push(encode(`BOLETA N° ${venta.id_venta}\nFecha: ${venta.fecha}\n`));
-  buffers.push(encode("-".repeat(PRINTER_WIDTH) + "\n"));
-
-  detalles.forEach(d => {
-    buffers.push(encode(`${d.cantidad} x ${formatCLP(d.precio_unitario)}\n`));
-    buffers.push(encode(twoColumns(d.nombre, formatCLP(d.subtotal)) + "\n"));
-  });
-
-  buffers.push(encode("-".repeat(PRINTER_WIDTH) + "\n"));
-  buffers.push(CMD.ALIGN_RIGHT);
-  buffers.push(CMD.BOLD_ON);
-  buffers.push(Buffer.from([0x1D, 0x21, 0x01])); 
-  buffers.push(encode(`TOTAL: ${formatCLP(total)}\n`));
-  buffers.push(Buffer.from([0x1D, 0x21, 0x00])); 
-  buffers.push(CMD.BOLD_OFF);
-
-  buffers.push(CMD.ALIGN_CENTER);
-  buffers.push(CMD.LF);
-
-  try {
-    const content417 = opts.content417 || `VENTA-${venta.id_venta}`;
-    const pdf417Png = await bwipjs.toBuffer({ bcid: 'pdf417', text: content417, scale: 2, height: 10, includetext: false, padding: 10, backgroundcolor: 'ffffff' });
-    buffers.push(imageToRaster(pdf417Png));
-  } catch (e) {}
-
-  buffers.push(CMD.LF, encode("TIMBRE ELECTRONICO SII\nVerifique en www.sii.cl\n"));
-  buffers.push(CMD.LF, CMD.LF, CMD.CUT);
-
-  return Buffer.concat(buffers);
-}
-
-
-// -------------------- HANDLERS PRINCIPALES --------------------
-
-// 1. LISTAR DISPOSITIVOS USB (Para llenar el Select del Frontend)
+// C. LISTAR USB (Para tu Select en Ventas.vue)
 ipcMain.handle("listUsbDevices", async () => {
     try {
-        // usbManager.getDeviceList() nos da todo lo conectado
-        const list = usbManager.getDeviceList();
-        
-        // Filtramos y mapeamos para que el frontend tenga VIDs y PIDs
-        return list.map(d => ({
-            name: `USB Device (VID: ${d.deviceDescriptor.idVendor} - PID: ${d.deviceDescriptor.idProduct})`,
-            vid: d.deviceDescriptor.idVendor, 
-            pid: d.deviceDescriptor.idProduct,
-            // Información extra si está disponible (a veces en Windows es limitado leer strings)
-            bus: d.busNumber,
-            address: d.deviceAddress
+        // Usamos escpos.USB.findPrinter() si disponible, o usb nativo
+        // escpos-usb tiene un método findPrinter()
+        const devices = escpos.USB.findPrinter(); 
+        // Esto devuelve un array de objetos device
+        return devices.map(d => ({
+            name: `USB Printer (VID:${d.deviceDescriptor.idVendor} PID:${d.deviceDescriptor.idProduct})`,
+            vid: d.deviceDescriptor.idVendor,
+            pid: d.deviceDescriptor.idProduct
         }));
-    } catch(e) { 
-        console.error("Error listando USB:", e);
-        return []; 
+    } catch(e) {
+        console.error(e);
+        return [];
     }
 });
 
-// 2. IMPRIMIR (Usando escpos, escpos-usb, escpos-network)
-ipcMain.handle('printFromData', async (event, sale, opts = {}) => {
-  console.log(`🖨️ Solicitud impresión. Tipo: ${opts.type}`);
-  
-  // Construimos el buffer binario manual (texto + imagenes)
-  const buffer = await buildTicketBuffer(sale, opts);
 
-  return new Promise((resolve, reject) => {
-      let device, printer;
-
-      try {
-          // --- CASO A: RED (LAN) ---
-          if (opts.type === 'lan' && opts.ip) {
-              console.log(`Conectando a LAN: ${opts.ip}:${opts.port}`);
-              device = new escpos.Network(opts.ip, opts.port || 9100);
-          } 
-          // --- CASO B: USB (libusbK) ---
-          else if (opts.type === 'usb') {
-              // Si el usuario seleccionó un dispositivo específico en el frontend, usamos ese VID/PID
-              // opts.printerInfo.vid y pid deben venir del frontend
-              if (opts.vid && opts.pid) {
-                  console.log(`Conectando a USB Específico: VID ${opts.vid} PID ${opts.pid}`);
-                  // Hexadecimal o Decimal, escpos-usb intenta manejarlo, pero mejor pasarlo tal cual
-                  device = new escpos.USB(opts.vid, opts.pid);
-              } else {
-                  console.log("Buscando primer dispositivo USB disponible...");
-                  device = new escpos.USB(); // Auto-detectar el primero
-              }
-          } 
-          else {
-              return reject("Tipo de impresora no soportado o falta IP/USB info");
-          }
-
-          printer = new escpos.Printer(device);
-
-          device.open((err) => {
-              if (err) {
-                  console.error("Error abriendo dispositivo:", err);
-                  return resolve({ ok: false, error: "No se pudo abrir la impresora. " + err.message });
-              }
-
-              // Enviar el buffer RAW construido manualmente
-              // .raw() es el método para enviar bytes directos sin que la librería intente formatear
-              printer
-                  .raw(buffer)
-                  .close(); // Importante cerrar para liberar el recurso libusbK
-              
-              resolve({ ok: true });
-          });
-
-      } catch (error) {
-          console.error("Excepción crítica impresión:", error);
-          resolve({ ok: false, error: error.message });
-      }
-  });
-});
-
-ipcMain.handle('cacheLogo', async (event, url) => {
-    const raster = await processLogoForThermal(url);
-    if (raster) { cachedLogoBuffer = raster; return true; }
-    return false;
-});
-
-// Handlers dummy para que no rompa el frontend si llama a otros métodos
-ipcMain.handle("listSystemPrinters", async () => { return [] });
-ipcMain.handle("detectScanners", async () => { return [] }); 
+// D. EXTRAS DUMMY
+ipcMain.handle("listSystemPrinters", async () => []);
+ipcMain.handle("detectScanners", async () => []);
 ipcMain.handle("printRaw", async () => { return { ok: false } });
 ipcMain.handle("discover-lan-printers", async () => { return { results: [] } });
 
+
+// ---------------------------------------------------------
+// 3. CONFIGURACIÓN VENTANA
+// ---------------------------------------------------------
 function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200, height: 800,
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false }
+      icon: path.join(__dirname, 'build/icon.ico'), // Opcional: si tienes ícono
+      webPreferences: { 
+        preload: path.join(__dirname, 'preload.cjs'), 
+        contextIsolation: true, 
+        nodeIntegration: false 
+      }
     });
-    const isDev = !app.isPackaged; 
-    if (isDev) { mainWindow.loadURL('http://147.182.245.46'); mainWindow.webContents.openDevTools(); }
-    else { mainWindow.loadFile(path.join(__dirname, '../web/dist/index.html')); }
+
+    // LÓGICA DE URL
+    const isDev = !app.isPackaged; // True si corres npm start, False si es .exe
+
+    if (isDev) {
+        console.log('Modo Desarrollo: Cargando localhost');
+        mainWindow.loadURL('http://localhost:5173'); 
+        mainWindow.webContents.openDevTools();
+    } else {
+        console.log('Modo Producción: Cargando Servidor VPS');
+        // AQUÍ PONES TU IP PÚBLICA
+        mainWindow.loadURL('http://147.182.245.46'); 
+        
+        // Opcional: Quitar menú superior en producción
+        mainWindow.setMenuBarVisibility(false);
+    }
 }
 app.whenReady().then(createWindow);

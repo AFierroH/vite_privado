@@ -1,48 +1,50 @@
 <template>
-  <div class="space-y-6">
-    <!-- Controles -->
-    <div class="flex gap-4 items-center">
-      <button
-        v-for="t in ['7d', '30d', '90d']"
-        :key="t"
-        @click="setRange(t)"
-        :class="[
-          'px-3 py-2 rounded transition',
-          range === t ? 'bg-[var(--accent)] text-black' : 'bg-[#0b1220] text-[var(--muted)]'
-        ]">
-        {{ t }}
-      </button>
+  <div class="space-y-6 p-4 text-[var(--text-primary)]">
+    
+    <div class="flex flex-wrap gap-4 items-center">
+      <div class="flex bg-[var(--panel)] rounded-lg border border-[var(--border)] p-1">
+          <button
+            v-for="t in ['7d', '30d', '90d']"
+            :key="t"
+            @click="setRange(t)"
+            :class="[
+              'px-4 py-1 rounded-md transition-colors text-sm font-medium',
+              range === t ? 'bg-[var(--accent)] text-white shadow' : 'text-[var(--muted)] hover:text-[var(--text-primary)]'
+            ]">
+            {{ t }}
+          </button>
+      </div>
 
-      <select v-model="categoriaFiltro" class="ml-auto bg-[#0b1220] border border-gray-700 px-2 py-1 rounded text-[var(--muted)]">
+      <select v-model="categoriaFiltro" class="ml-auto bg-[var(--input-bg)] border border-[var(--border)] px-3 py-2 rounded-lg text-[var(--text-primary)] outline-none focus:border-[var(--accent)]">
         <option value="">Todas las categorías</option>
         <option v-for="c in categorias" :key="c.categoria" :value="c.categoria">{{ c.categoria }}</option>
       </select>
     </div>
 
-    <!-- Gráfico de ventas -->
-    <div class="p-4 bg-[var(--panel)] rounded shadow">
-      <canvas ref="statsChart" height="360"></canvas>
+    <div class="p-4 bg-[var(--panel)] rounded-lg border border-[var(--border)] shadow-sm h-80 relative">
+      <canvas ref="statsChart"></canvas>
     </div>
 
-    <!-- Productos top -->
-    <div class="bg-[var(--panel)] p-4 rounded shadow">
+    <div class="bg-[var(--panel)] p-4 rounded-lg border border-[var(--border)] shadow-sm overflow-hidden">
       <h3 class="text-lg font-semibold mb-3 text-[var(--text-primary)]">Productos más vendidos 🏆</h3>
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-[var(--muted)] border-b border-gray-700">
-            <th class="text-left p-2">Producto</th>
-            <th class="text-right p-2">Cantidad</th>
-            <th class="text-right p-2">Ingresos</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in productos" :key="p.nombre" class="border-b border-gray-800">
-            <td class="p-2">{{ p.nombre }}</td>
-            <td class="p-2 text-right">{{ p.total_vendido }}</td>
-            <td class="p-2 text-right">${{ p.ingreso.toLocaleString() }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+            <tr class="text-[var(--muted)] border-b border-[var(--border)]">
+                <th class="text-left p-2">Producto</th>
+                <th class="text-right p-2">Cantidad</th>
+                <th class="text-right p-2">Ingresos</th>
+            </tr>
+            </thead>
+            <tbody class="divide-y divide-[var(--border)]">
+            <tr v-for="p in productos" :key="p.nombre" class="hover:bg-[var(--bg-deep)] transition-colors">
+                <td class="p-2 text-[var(--text-primary)]">{{ p.nombre }}</td>
+                <td class="p-2 text-right text-[var(--text-secondary)]">{{ p.total_vendido }}</td>
+                <td class="p-2 text-right font-mono text-[var(--accent)]">${{ p.ingreso.toLocaleString() }}</td>
+            </tr>
+            </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>

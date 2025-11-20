@@ -1,82 +1,72 @@
-/* Import tailwind v4 (zero-config) and small theme variables. */
-/* Use CSS vars to keep dark/light theme easy to switch via 'dark' class on html. */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-
 @import "tailwindcss";
 
-/* PASO 1: DEFINIR VARIABLES DE COLOR 
-  Aquí están todos tus colores para ambos temas.
-*/
 :root {
-  /* --- MODO CLARO (Default) --- */
-  --bg: #F3F4F6;             /* Fondo gris muy claro */
-  --panel: #FFFFFF;           /* Paneles blancos */
-  --bg-deep: #E5E7EB;         /* Un fondo un poco más oscuro (ej. inputs) */
-  --border: #D1D5DB;          /* Bordes grises */
+  /* === MODO CLARO (Día) === */
+  --bg-deep: #F3F4F6;       
+  --panel: #FFFFFF;         
+  --sidebar-bg: #FFFFFF;    /* Sidebar blanca en modo día */
+  --border: #E5E7EB;        
   
-  --text-primary: #111827;    /* Texto principal (casi negro) */
-  --muted: #6B7280;            /* Texto secundario (gris) */
+  --text-primary: #1F2937;  /* Gris oscuro (no negro puro) para leer mejor */
+  --text-secondary: #6B7280;
+  --text-inverse: #FFFFFF; 
 
-  --accent: #3B82F6;           /* Acento (azul) */
-  --text-on-accent: #FFFFFF;  /* Texto sobre el acento (blanco) */
+  --input-bg: #FFFFFF;      
+  --input-border: #D1D5DB;  
 
-  --scrollbar-thumb: #6B7280;  /* Scrollbar en modo claro */
+  /* Azul más brillante y amigable para modo claro */
+  --accent: #3B82F6;        /* Blue-500 */
+  --accent-hover: #2563EB;  /* Blue-600 */
+  --text-on-accent: #FFFFFF;
+
+  --scrollbar-thumb: #9CA3AF;
 }
 
 .dark {
-  /* --- MODO OSCURO --- */
-  /* Sobrescribe las variables cuando <html> tiene la clase .dark */
-  --bg: #111827;             /* Fondo principal (azul/gris muy oscuro) */
-  --panel: #1F2937;           /* Paneles (gris oscuro) */
-  --bg-deep: #081026;         /* (Este es el que usabas en tus inputs) */
-  --border: #374151;          /* Bordes (gris-700) */
+  /* === MODO OSCURO (Noche) === */
+  --bg-deep: #020617;       
+  --panel: #0F172A;         /* Azul noche */
+  --sidebar-bg: #0B1221;    /* Tu color original de sidebar */
+  --border: #1E293B;        
   
-  --text-primary: #F9FAFB;    /* Texto principal (casi blanco) */
-  --muted: #9CA3AF;            /* Texto secundario (gris claro) */
+  --text-primary: #F9FAFB;  
+  --text-secondary: #9CA3AF;
+  --text-inverse: #000000;  
 
-  --accent: #60A5FA;           /* Acento (azul más brillante) */
-  --text-on-accent: #000000;  /* Texto sobre el acento (negro) */
+  --input-bg: #1E293B;      
+  --input-border: #334155;
 
-  --scrollbar-thumb: #374151;  /* Scrollbar en modo oscuro (tu color original) */
+  --accent: #60A5FA;        /* Azul neón suave */
+  --accent-hover: #3B82F6;
+  --text-on-accent: #000000; /* Contraste alto */
+
+  --scrollbar-thumb: #475569;
 }
 
-/* PASO 2: APLICAR VARIABLES AL <body>
-  Aquí combinamos tus estilos de 'body' con los míos.
-*/
+/* --- BASE --- */
 body {
-  /* Tus estilos originales */
   font-family: 'Roboto', sans-serif;
   overflow: hidden;
   margin: 0;
   padding: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  /* Estilos añadidos para el tema */
-  background-color: var(--bg);
+  background-color: var(--bg-deep);
   color: var(--text-primary);
-  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* PASO 3: APLICAR VARIABLES AL SCROLLBAR
-  Modificamos tu scrollbar para que use la variable.
-*/
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* --- ESTILOS GLOBALES DE BOTONES (Para que todos se vean igual) --- */
+button.btn-primary {
+  background-color: var(--accent);
+  color: var(--text-on-accent);
+  transition: background-color 0.2s;
+}
+button.btn-primary:hover {
+  background-color: var(--accent-hover);
 }
 
-::-webkit-scrollbar-track {
-  background: transparent; 
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb); /* <-- Usamos la variable */
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  /* Aclaramos u oscurecemos la variable (esto es avanzado,
-     pero por ahora lo dejaremos fijo o puedes usar otra variable) */
-  background: #4B5563; /* (gray-600) */
-}
+/* --- SCROLLBAR --- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }

@@ -72,8 +72,8 @@ onMounted(async () => {
                 
                 if (window.electronAPI?.cacheLogo) {
                     const ok = await window.electronAPI.cacheLogo(session.empresa.logo_url);
-                    if (ok) console.log('✅ Logo procesado y listo en RAM para impresión térmica');
-                    else console.warn('⚠️ No se pudo procesar el logo para impresión');
+                    if (ok) console.log('Logo procesado y listo en RAM para impresión térmica');
+                    else console.warn('No se pudo procesar el logo para impresión');
                 }
             }
         } catch (e) {
