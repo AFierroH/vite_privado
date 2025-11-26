@@ -126,7 +126,7 @@ async function checkoutPrueba() {
         
         // 2. Emitir DTE Prueba (Llamando al endpoint custom que creamos)
         // Asumiendo que creaste este endpoint en el controller: @Post('emitir-prueba')
-        const resDte = await api.post('/ventas/emitir-prueba', { 
+        const resDte = await api.post('/dte/emitir-prueba', { 
             idVenta: dataVenta.venta.id_venta, 
             caso: casoSeleccionado.value 
         })
