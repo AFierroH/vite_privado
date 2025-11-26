@@ -1,14 +1,15 @@
 {
   "name": "pos-electron-cliente",
   "productName": "Mi POS",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Cliente de escritorio para POS",
   "main": "electron.js",
   "type": "module",
   "scripts": {
     "start": "node node_modules/electron/cli.js .",
     "dev": "concurrently \"wait-on http://localhost:5173 && electron .\"",
-    "build": "electron-builder",
+    "version-up": "npm version patch --no-git-tag-version",
+    "build": "npm run version-up && electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {

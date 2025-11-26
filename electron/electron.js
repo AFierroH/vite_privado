@@ -3,236 +3,194 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
+import iconv from 'iconv-lite';
+import bwipjs from 'bwip-js';
+import { PNG } from 'pngjs';
 
-// Importaciones de Hardware
 const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const escpos = require('escpos');
 escpos.USB = require('escpos-usb');
 escpos.Network = require('escpos-network');
 const Jimp = require('jimp');
 
-// Configurar path
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Variables Globales
+// -------------------- CONFIGURACIÓN --------------------
 let mainWindow = null;
-let cachedLogoImage = null; // Guardaremos la instancia de imagen cargada
+let cachedLogoImage = null; 
+const DEFAULT_CODEPAGE = 'CP858';
 
-// ---------------------------------------------------------
-// 1. FUNCIÓN PRINCIPAL DE IMPRESIÓN
-// ---------------------------------------------------------
-async function printTicket(sale, options) {
+// ANCHO DE PAPEL: Si tu impresora es de 80mm, usa 48 o 42.
+// Si los precios se bajan de línea, reduce este número a 42.
+const PRINTER_WIDTH = 48; 
+
+// -------------------- HELPERS --------------------
+function formatCLP(num) { return '$ ' + new Intl.NumberFormat('es-CL').format(num); }
+
+async function processLogoForEscpos(urlOrPath) {
+    return new Promise((resolve, reject) => {
+        Jimp.read(urlOrPath)
+            .then(image => {
+                image.scaleToFit(150, 40).greyscale();
+                const tempPath = path.join(process.env.TEMP || __dirname, 'temp_logo.png');
+                image.writeAsync(tempPath)
+                     .then(() => { escpos.Image.load(tempPath, function(img){ resolve(img); }); })
+                     .catch(reject);
+            })
+            .catch(err => { console.error("Jimp Error:", err); resolve(null); });
+    });
+}
+
+// -------------------- IMPRESIÓN --------------------
+async function printTicket(sale, opts) {
     return new Promise(async (resolve, reject) => {
-        let device;
+        let device, printer;
         
         try {
-            // --- SELECCIÓN DE DISPOSITIVO ---
-            if (options.type === 'lan' && options.ip) {
-                console.log(`Conectando a RED: ${options.ip}:${options.port || 9100}`);
-                device = new escpos.Network(options.ip, options.port || 9100);
+            if (opts.type === 'lan' && opts.ip) {
+                console.log(`LAN: ${opts.ip}`);
+                device = new escpos.Network(opts.ip, opts.port || 9100);
             } 
-            else if (options.type === 'usb') {
-                if (options.vid && options.pid) {
-                    console.log(`Conectando a USB Específico: VID ${options.vid} PID ${options.pid}`);
-                    device = new escpos.USB(options.vid, options.pid);
+            else if (opts.type === 'usb') {
+                if (opts.vid && opts.pid) {
+                    console.log(`USB: VID ${opts.vid} PID ${opts.pid}`);
+                    device = new escpos.USB(opts.vid, opts.pid);
                 } else {
-                    console.log(`Auto-detectando primer USB...`);
-                    device = new escpos.USB(); // Auto-detectar
+                    console.log(`Auto-USB`);
+                    device = new escpos.USB(); 
                 }
             } else {
-                return reject("Tipo de conexión no válido");
+                return reject("Faltan datos de conexión");
             }
 
-            // --- CONFIGURAR IMPRESORA ---
-            const printer = new escpos.Printer(device, { encoding: "CP858" }); // CP858 o CP1252 para acentos
+            // IMPORTANTE: Pasamos el ancho al driver
+            printer = new escpos.Printer(device, { encoding: DEFAULT_CODEPAGE, width: PRINTER_WIDTH });
 
             device.open(async function(err) {
-                if (err) {
-                    return reject("No se pudo abrir la impresora. ¿Está conectada? Error: " + err);
-                }
+                if (err) return reject("Error impresora: " + err);
 
                 try {
-                    // 1. INICIO
-                    printer
-                        .font('a')
-                        .align('ct')
-                        .style('b'); // Negrita
+                    // A. INICIO
+                    printer.font('a').align('ct').style('b');
+                    if (cachedLogoImage) await printer.image(cachedLogoImage, 's8');
 
-                    // 2. LOGO (Si existe en caché)
-                    if (cachedLogoImage) {
-                        await printer.image(cachedLogoImage, 's8'); // s8 = densidad estándar
-                    }
+                    // B. ENCABEZADO
+                    printer.size(1, 1)
+                           .text(sale.empresa.razonSocial || 'EMPRESA')
+                           .style('normal').size(0.5, 0.5)
+                           .text(`RUT: ${sale.empresa.rut || '-'}`)
+                           .text(sale.empresa.direccion || '')
+                           .text(`Tel: ${sale.empresa.telefono || ''}`)
+                           .feed(1);
 
-                    // 3. ENCABEZADO
-                    printer
-                        .size(1, 1)
-                        .text(sale.empresa.razonSocial || 'EMPRESA')
-                        .style('normal') // Quitar negrita
-                        .size(0.5, 0.5) // Tamaño normal
-                        .text(`RUT: ${sale.empresa.rut || ''}`)
-                        .text(sale.empresa.direccion || '')
-                        .feed(1);
+                    printer.align('lt')
+                           .text('-'.repeat(PRINTER_WIDTH))
+                           .text(`BOLETA: ${sale.venta.id_venta}`)
+                           .text(`FECHA:  ${sale.venta.fecha}`)
+                           .text('-'.repeat(PRINTER_WIDTH));
 
-                    printer
-                        .align('lt')
-                        .text('------------------------------------------')
-                        .text(`BOLETA: ${sale.venta.id_venta}`)
-                        .text(`FECHA:  ${sale.venta.fecha}`)
-                        .text('------------------------------------------');
-
-                    // 4. DETALLES
-                    // Cabecera de tabla manual simple
+                    // C. DETALLES (CON TABLA AJUSTADA A LA DERECHA)
+                    // Ajuste de anchos: 15% Cantidad, 50% Nombre, 35% Precio (Alineado derecha)
                     printer.tableCustom([
                         { text: "CANT", align: "LEFT", width: 0.15 },
-                        { text: "DESCRIPCION", align: "LEFT", width: 0.55 },
-                        { text: "TOTAL", align: "RIGHT", width: 0.30 }
+                        { text: "DESCRIPCION", align: "LEFT", width: 0.50 },
+                        { text: "TOTAL", align: "RIGHT", width: 0.35 }
                     ]);
-                    
+
                     sale.detalles.forEach(d => {
-                         // Formatear precio
-                         const totalStr = new Intl.NumberFormat('es-CL').format(d.subtotal);
+                         const totalStr = formatCLP(d.subtotal);
+                         // Recortar nombre si es muy largo para que no rompa la tabla
+                         const nombreCorto = d.nombre.substring(0, 22); 
+                         
                          printer.tableCustom([
                             { text: String(d.cantidad), align: "LEFT", width: 0.15 },
-                            { text: d.nombre.substring(0, 20), align: "LEFT", width: 0.55 },
-                            { text: totalStr, align: "RIGHT", width: 0.30 }
+                            { text: nombreCorto, align: "LEFT", width: 0.50 },
+                            { text: totalStr, align: "RIGHT", width: 0.35 }
                         ]);
                     });
 
-                    printer.text('------------------------------------------');
-
-                    // 5. TOTALES
-// ------------------------------------------------
-                    // 5. TOTALES (Neto, IVA y Total)
-                    // ------------------------------------------------
+                    printer.text('-'.repeat(PRINTER_WIDTH));
+                    
+                    // D. TOTALES (NETO + IVA + TOTAL)
                     const total = sale.total;
                     const neto = Math.round(total / 1.19);
                     const iva = total - neto;
 
-                    const totalFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(total);
-                    const netoFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(neto);
-                    const ivaFmt = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(iva);
+                    const totalFmt = formatCLP(total);
+                    const netoFmt = formatCLP(neto);
+                    const ivaFmt = formatCLP(iva);
                     
-                    printer
-                        .align('rt') // Alinear derecha
-                        .style('normal')
-                        .text(`Neto: ${netoFmt}`)
-                        .text(`IVA (19%): ${ivaFmt}`)
-                        .feed(1); // Un pequeño espacio
+                    // Alineación derecha nativa
+                    printer.align('rt') 
+                           .style('normal')
+                           .text(`Neto: ${netoFmt}`)
+                           .text(`IVA (19%): ${ivaFmt}`)
+                           .feed(1);
 
-                    // EL TOTAL GRANDE
-                    printer
-                        .style('b') // Negrita
-                        .size(1, 1) // Doble tamaño
-                        .text(`TOTAL: ${totalFmt}`)
-                        .size(0.5, 0.5) // Volver a tamaño normal
-                        .style('normal')
-                        .align('ct') // Volver al centro para lo que sigue (QR)
-                        .feed(1);
-                    // 6. PDF417 (Usando QR como alternativa nativa fácil, o código de barras)
-                    // La librería escpos soporta QR nativo, PDF417 nativo depende del modelo.
-                    // Usaremos QR por compatibilidad, o barcode si prefieres.
-                    const timbre = options.content417 || `VENTA-${sale.venta.id_venta}`;
+                    // TOTAL GRANDE
+                    printer.align('rt')
+                           .style('b').size(1, 1)
+                           .text(`TOTAL: ${totalFmt}`)
+                           .size(0.5, 0.5).style('normal')
+                           .align('ct').feed(1);
+
+                    // E. QR (TIMBRE)
+                    const timbre = opts.content417 || `VENTA-${sale.venta.id_venta}`;
                     
-                    // Opción A: Intentar imprimir QR nativo (muy compatible)
                     try {
-                        printer.qrimage(timbre, function(err){
-                             finalizarTicket(this);
+                        printer.qrimage(timbre, function(){
+                             this.text('TIMBRE ELECTRONICO SII');
+                             this.text('Verifique en www.sii.cl');
+                             this.feed(2);
+                             this.cut();
+                             this.close(); 
+                             resolve({ ok: true });
                         });
                     } catch(e) {
-                        // Si falla QR, finalizar directo
-                        finalizarTicket(printer);
-                    }
-
-                    // Función para cerrar (callback del QR)
-                    function finalizarTicket(p) {
-                        p.text('TIMBRE ELECTRONICO SII')
-                         .text('Verifique en www.sii.cl')
-                         .feed(2)
-                         .cut()
-                         .close(); // IMPORTANTE: Cerrar conexión para liberar USB
+                        printer.cut().close();
                         resolve({ ok: true });
                     }
 
-                } catch (printError) {
+                } catch (pError) {
                     device.close();
-                    reject(printError);
+                    reject(pError);
                 }
             });
 
-        } catch (e) {
-            reject(e.message);
-        }
+        } catch (e) { reject(e.message); }
     });
 }
 
-
-// ---------------------------------------------------------
-// 2. HANDLERS IPC (COMUNICACIÓN CON VUE)
-// ---------------------------------------------------------
-
-// A. IMPRIMIR
+// -------------------- HANDLERS --------------------
 ipcMain.handle('printFromData', async (event, sale, opts) => {
-    try {
-        await printTicket(sale, opts);
-        return { ok: true };
-    } catch (error) {
-        console.error("Error imprimiendo:", error);
-        return { ok: false, error: String(error) };
-    }
+    try { await printTicket(sale, opts); return { ok: true }; } 
+    catch (err) { console.error(err); return { ok: false, error: String(err) }; }
 });
 
-// B. CACHEAR LOGO (Cargar imagen con escpos.Image)
 ipcMain.handle('cacheLogo', async (event, url) => {
     try {
-        console.log('Cargando logo para escpos:', url);
-        // Descargar imagen temporalmente
-        const jimpImg = await Jimp.read(url);
-        jimpImg.scaleToFit(150, 40) 
-               .greyscale(); 
-        
-        const buffer = await jimpImg.getBufferAsync(Jimp.MIME_PNG);
-        
-        const tempPath = path.join(process.env.TEMP || __dirname, 'logo_temp.png');
-        fs.writeFileSync(tempPath, buffer);
-
-        // Cargar con la clase de escpos
-        escpos.Image.load(tempPath, function(image){
-            cachedLogoImage = image;
-            console.log('Logo cargado en memoria escpos');
-        });
-        return true;
-    } catch (e) {
-        console.error("Error logo:", e);
+        const img = await processLogoForEscpos(url);
+        if(img) { cachedLogoImage = img; return true; }
         return false;
-    }
+    } catch (e) { console.error(e); return false; }
 });
 
-// C. LISTAR USB (Para tu Select en Ventas.vue)
 ipcMain.handle("listUsbDevices", async () => {
     try {
-        // Usamos escpos.USB.findPrinter() si disponible, o usb nativo
-        // escpos-usb tiene un método findPrinter()
-        const devices = escpos.USB.findPrinter(); 
-        // Esto devuelve un array de objetos device
+        const devices = escpos.USB.findPrinter();
         return devices.map(d => ({
             name: `USB Printer (VID:${d.deviceDescriptor.idVendor} PID:${d.deviceDescriptor.idProduct})`,
             vid: d.deviceDescriptor.idVendor,
             pid: d.deviceDescriptor.idProduct
         }));
-    } catch(e) {
-        console.error(e);
-        return [];
-    }
+    } catch(e) { return []; }
 });
 
-
-// D. EXTRAS DUMMY
 ipcMain.handle("listSystemPrinters", async () => []);
 ipcMain.handle("detectScanners", async () => []);
-ipcMain.handle("printRaw", async () => { return { ok: false } });
-ipcMain.handle("discover-lan-printers", async () => { return { results: [] } });
-
+ipcMain.handle("printRaw", async () => ({ ok: false }));
+ipcMain.handle("discover-lan-printers", async () => ({ results: [] }));
 
 // ---------------------------------------------------------
 // 3. CONFIGURACIÓN VENTANA
@@ -258,7 +216,7 @@ function createWindow() {
     } else {
         console.log('Modo Producción: Cargando Servidor VPS');
         // AQUÍ PONES TU IP PÚBLICA
-        mainWindow.loadURL('http://147.182.245.46'); 
+        mainWindow.loadURL('http://miposra.site'); 
         
         // Opcional: Quitar menú superior en producción
         mainWindow.setMenuBarVisibility(false);
