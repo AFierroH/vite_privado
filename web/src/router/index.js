@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Dashboard from '../pages/Dashboard.vue'
 import Estadisticas from '../pages/Estadisticas.vue'
 import Ventas from '../pages/Ventas.vue'
+import Ventas2 from '../pages/Ventas2.vue'
 import Productos from '../pages/Productos.vue'
 import Configuracion from '../pages/Configuracion.vue'
 import printTest from '../pages/PruebaImpresora.vue'
@@ -18,7 +19,8 @@ const routes = [
   { path: '/config', component: Configuracion },
   { path: '/impresora', component: printTest },
   { path: '/importer', component: Importer },
-  { path: '/usuarios', component: Usuarios }
+  { path: '/usuarios', component: Usuarios },
+  { path: '/Ventas2', component: Ventas2 }
 ]
 
 const router = createRouter({
