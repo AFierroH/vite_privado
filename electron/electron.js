@@ -211,12 +211,12 @@ function createWindow() {
 
     if (isDev) {
         console.log('Modo Desarrollo: Cargando localhost');
-        mainWindow.loadURL('http://localhost:5173'); 
+        mainWindow.loadURL('https://localhost:5173'); 
         mainWindow.webContents.openDevTools();
     } else {
         console.log('Modo Producción: Cargando Servidor VPS');
         // AQUÍ PONES TU IP PÚBLICA
-        mainWindow.loadURL('http://miposra.site'); 
+        mainWindow.loadURL('https://miposra.site'); 
         
         // Opcional: Quitar menú superior en producción
         mainWindow.setMenuBarVisibility(false);
