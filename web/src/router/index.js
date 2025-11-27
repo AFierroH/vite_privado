@@ -1,16 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from '../pages/Dashboard.vue'
-import Estadisticas from '../pages/Estadisticas.vue'
-import Ventas from '../pages/Ventas.vue'
-import Ventas2 from '../pages/Ventas2.vue'
-import Productos from '../pages/Productos.vue'
-import Configuracion from '../pages/Configuracion.vue'
-import printTest from '../pages/PruebaImpresora.vue'
-import Usuarios from '../pages/Usuarios.vue'
-import Importer from '../pages/Importer.vue'
+
+// 1. IMPORTA NORMAL SOLO EL LOGIN (Lo primero que se ve)
 import Login from '../pages/Login.vue'
+
+// 2. EL RESTO, IMPORTALOS ASÍ (Lazy Loading):
+const Dashboard = () => import('../pages/Dashboard.vue')
+const Estadisticas = () => import('../pages/Estadisticas.vue')
+const Ventas = () => import('../pages/Ventas.vue')
+const Ventas2 = () => import('../pages/Ventas2.vue')
+const Productos = () => import('../pages/Productos.vue')
+const Configuracion = () => import('../pages/Configuracion.vue')
+const printTest = () => import('../pages/PruebaImpresora.vue')
+const Usuarios = () => import('../pages/Usuarios.vue')
+const Importer = () => import('../pages/Importer.vue')
+
 const routes = [
-    { path: '/login', component: Login },
+  { path: '/login', component: Login },
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: Dashboard },
   { path: '/estadisticas', component: Estadisticas },
