@@ -8,7 +8,7 @@
       </button>
     </div>
 
-    <div class="flex-1 bg-[var(--panel)] p-4 rounded-lg border border-[var(--border)] overflow-hidden flex flex-col shadow-sm">
+    <div class="flex-1 bg-[var(--panel)] p-4 rounded-lg border border-[var(--border)] overflow-hidden flex flex-col shadow-sm relative">
       
       <div class="mb-4 relative">
          <input
@@ -20,9 +20,9 @@
          <svg class="w-5 h-5 text-[var(--text-secondary)] absolute left-3 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
       </div>
 
-      <div v-if="isLoading" class="flex-1 flex items-center justify-center text-[var(--accent)]">
-          <svg class="animate-spin h-8 w-8 mr-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-          Cargando productos...
+      <div v-if="isLoading" class="absolute inset-0 top-[80px] bg-[var(--panel)]/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+          <svg class="animate-spin h-10 w-10 text-[var(--accent)] mb-3" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          <span class="text-sm font-bold text-[var(--text-secondary)]">Cargando inventario...</span>
       </div>
 
       <div v-else-if="productos.length === 0" class="text-[var(--text-secondary)] text-center py-10 flex-1 flex flex-col items-center justify-center">
@@ -30,28 +30,28 @@
         No se encontraron productos.
       </div>
 
-      <div v-else class="overflow-y-auto flex-1 pr-2 space-y-2">
-          <div v-for="p in productos" :key="p.id_producto" class="flex justify-between p-3 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] bg-[var(--bg-deep)] transition-colors items-center">
+      <div v-else class="overflow-y-auto flex-1 pr-2 space-y-2 custom-scroll">
+          <div v-for="p in productos" :key="p.id_producto" class="flex justify-between p-3 rounded-lg border border-[var(--border)] hover:border-[var(--accent)] bg-[var(--bg-deep)] transition-colors items-center group">
             
-            <div class="flex-1">
-              <div class="font-bold text-lg text-[var(--text-primary)]">{{ p.nombre }}</div>
-              <div class="text-sm text-[var(--text-secondary)] flex gap-3 mt-1">
-                 <span class="bg-[var(--panel)] px-2 py-0.5 rounded border border-[var(--border)]">Stock: {{ p.stock }}</span>
+            <div class="flex-1 min-w-0 pr-4">
+              <div class="font-bold text-lg text-[var(--text-primary)] truncate">{{ p.nombre }}</div>
+              <div class="text-sm text-[var(--text-secondary)] flex gap-3 mt-1 items-center">
+                 <span class="bg-[var(--panel)] px-2 py-0.5 rounded border border-[var(--border)] text-xs font-mono">STOCK: {{ p.stock }}</span>
                  <span class="font-bold text-[var(--accent)]">{{ formatPrice(p.precio) }}</span>
               </div>
             </div>
 
-            <div class="flex gap-2">
-              <button @click="agregarStock(p.id_producto)" class="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 rounded font-bold transition" title="Sumar Stock">+1</button>
-              <button @click="quitarStock(p.id_producto)" class="px-3 py-1.5 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-300 rounded font-bold transition" title="Restar Stock">-1</button>
-              <button @click="editarProducto(p)" class="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 rounded transition">Editar</button>
-              <button @click="eliminarProducto(p.id_producto)" class="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 rounded transition">✕</button>
+            <div class="flex gap-2 shrink-0">
+              <button @click="agregarStock(p.id_producto)" class="px-3 py-1.5 bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 rounded font-bold transition text-sm" title="Sumar Stock">+1</button>
+              <button @click="quitarStock(p.id_producto)" class="px-3 py-1.5 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-300 rounded font-bold transition text-sm" title="Restar Stock">-1</button>
+              <button @click="editarProducto(p)" class="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 rounded transition text-sm font-medium">Editar</button>
+              <button @click="eliminarProducto(p.id_producto)" class="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 rounded transition text-sm font-medium">✕</button>
             </div>
           </div>
       </div>
     </div>
 
-    <div v-if="mostrarModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity">
+    <div v-if="mostrarModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity">
       <div class="bg-[var(--panel)] p-6 rounded-xl shadow-2xl w-full max-w-md border border-[var(--border)] transform transition-all scale-100">
         <h3 class="text-xl font-bold mb-5 text-[var(--text-primary)] border-b border-[var(--border)] pb-2">
             {{ productoActual.id_producto ? 'Editar Producto' : 'Nuevo Producto' }}
@@ -97,7 +97,7 @@ import {
 
 const productos = ref([])
 const q = ref('')
-const isLoading = ref(false) // NUEVO ESTADO
+const isLoading = ref(false)
 const mostrarModal = ref(false)
 const productoActual = ref({ nombre: '', precio: 0, stock: 0 })
 
@@ -107,11 +107,18 @@ function formatPrice(value) {
 
 async function load() {
   isLoading.value = true
+  const tInicio = performance.now()
+
+  const session = JSON.parse(localStorage.getItem('session') || '{}')
+  const myEmpresaId = session.user?.id_empresa || 1; 
+
   try {
-    const r = await fetchProducts(q.value)
-    // Validación robusta de respuesta
+    // Pasamos explícitamente el ID
+    const r = await fetchProducts(q.value, myEmpresaId)
     const data = r.data ?? r
     productos.value = Array.isArray(data) ? data : []
+    const tFinal = performance.now() // Cronómetro Fin
+    console.log(`Rendimiento Carga: ${(tFinal - tInicio).toFixed(2)} ms | ${productos.value.length} items`)
   } catch (e) {
     console.error("Error cargando productos:", e)
     productos.value = []
@@ -130,7 +137,6 @@ function cerrarModal() {
 }
 
 function editarProducto(p) {
-  // Clonar objeto para no modificar la vista antes de guardar
   productoActual.value = { ...p }
   mostrarModal.value = true
 }
@@ -143,7 +149,7 @@ async function guardarProducto() {
         await addProduct(productoActual.value)
       }
       cerrarModal()
-      load() // Recargar lista
+      load() 
   } catch(e) { 
       alert('Error al guardar producto') 
   }
@@ -165,3 +171,9 @@ async function eliminarProducto(id) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.custom-scroll::-webkit-scrollbar { width: 6px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>

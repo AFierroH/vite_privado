@@ -138,7 +138,6 @@ import { useAuth } from '../composables/useAuth.js'
 
 const { currentUser } = useAuth()
 
-// --- ESTADO & PERSISTENCIA IMPRESORA ---
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
 const printerType = ref(savedConfig.type || 'usb')
 const printerInfo = ref(savedConfig.info || { ip: '', port: 9100 })
@@ -162,7 +161,7 @@ const productos = ref([])
 const cart = ref([])
 const sessionMode = ref('normal')
 const voucherNumber = ref('')
-const isLoading = ref(false) // NUEVO: Estado de carga para el buscador
+const isLoading = ref(false) 
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
 
@@ -179,9 +178,13 @@ async function listUsbDevices() {
 }
 
 async function search() {
+    const tInicio = performance.now()
     isLoading.value = true
+
+    const session = JSON.parse(localStorage.getItem('session') || '{}')
+    const myEmpresaId = session.user?.id_empresa || 1; // Fallback a 1 si falla
     try {
-        const r = await fetchProducts(q.value)
+        const r = await fetchProducts(q.value, myEmpresaId)
         productos.value = r.data ?? r ?? []
     } catch(e) { 
         productos.value = [] 

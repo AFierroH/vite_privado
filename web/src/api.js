@@ -58,9 +58,22 @@ export async function quitarStockApi(id, cantidad) {
   return r.data
 }
 
-export async function fetchProducts(q = '') {
-  const r = await api.get('/productos', { params: { search: q } })
-  return r.data
+export async function fetchProducts(q = '', empresaId = null) {
+  const params = { search: q };
+  if (!empresaId) {
+      try {
+          const session = JSON.parse(localStorage.getItem('session') || '{}');
+          if (session.user?.id_empresa) {
+              params.empresaId = session.user.id_empresa;
+          } else if (session.empresa?.id_empresa) {
+               params.empresaId = session.empresa.id_empresa;
+          }
+      } catch(e){}
+  } else {
+      params.empresaId = empresaId;
+  }
+
+  return api.get(`/productos`, { params });
 }
 
 /* ----------------------- USUARIOS --------------------- */

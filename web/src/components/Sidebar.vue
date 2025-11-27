@@ -95,7 +95,7 @@ const items = [
   { key: 'config', title: 'Configuración', route: '/config', adminOnly: true },
   { key: 'usuarios', title: 'Usuarios', route: '/usuarios' },
   { key: 'importer', title: 'Importar BD', route: '/importer' },
-  { key: 'Ventas2', title: 'Ventas2', route: '/ventas2' }
+  { key: 'Ventas2', title: 'Ventas ', route: '/ventas2' }
 ]
 
 const filteredItems = computed(() => {
