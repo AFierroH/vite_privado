@@ -11,7 +11,7 @@ import Importer from '../pages/Importer.vue'
 import Login from '../pages/Login.vue'
 const routes = [
     { path: '/login', component: Login },
-  { path: '/', redirect: '/login' },
+  { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', component: Dashboard },
   { path: '/estadisticas', component: Estadisticas },
   { path: '/ventas', component: Ventas },

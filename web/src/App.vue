@@ -1,8 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watchEffect } from 'vue'
+import { useRouter } from 'vue-router' // 1. Importar useRouter
+
 import LoginPage from './pages/Login.vue'
 import MainLayout from './pages/MainLayout.vue'
 
+const router = useRouter() // 2. Inicializar router
 const user = ref(null)
 const isReady = ref(false)
 
@@ -10,6 +13,9 @@ function handleLogin(session) {
   user.value = session.user
   localStorage.setItem('session', JSON.stringify(session))
   console.log('Sesión iniciada:', session.user)
+  
+  // 3. AGREGAR ESTO: Redirigir fuera del login
+  router.push('/dashboard') 
 }
 
 function logout() {
