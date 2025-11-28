@@ -17,23 +17,42 @@
           </label>
       </div>
 
-      <!-- BOTONERA DE PRUEBAS (SOLO VISIBLE SI ACTIVAS EL SWITCH) -->
-      <div v-if="modoPruebas" class="flex flex-col gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200">
+      <!-- PANEL DE CONTROL DE PRUEBAS (SOLO VISIBLE SI ACTIVAS EL SWITCH) -->
+      <div v-if="modoPruebas" class="flex flex-col gap-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-300 shadow-inner">
           
-          <div class="flex items-center gap-3 mb-2 pb-2 border-b border-yellow-200">
-              <span class="text-sm font-bold text-yellow-800">FOLIO A USAR:</span>
-              <!-- Input para controlar manualmente el folio, vital para pruebas -->
-              <input type="number" v-model.number="folioManual" class="w-20 p-1 text-center font-bold text-lg border border-yellow-400 rounded bg-white text-black" min="1" />
-              <span class="text-xs text-yellow-600">(Cambia este número para cada caso: 1, 2, 3...)</span>
+          <div class="flex items-center justify-between border-b border-yellow-200 pb-2">
+              <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-yellow-800">FOLIO A USAR EN XML:</span>
+                  <!-- Input manual para forzar el folio del CAF (1 al 5) -->
+                  <input type="number" v-model.number="folioManual" class="w-20 p-2 text-center font-bold text-xl border-2 border-yellow-500 rounded bg-white text-black focus:outline-none focus:ring-2 focus:ring-yellow-400" min="1" />
+                  <span class="text-xs text-yellow-700 italic">(¡Verifica que coincida con tu CAF de certificación!)</span>
+              </div>
+              <div class="text-xs text-yellow-800 bg-yellow-200 px-2 py-1 rounded">
+                  Caso actual: <strong>{{ tipoVenta || 'Ninguno' }}</strong>
+              </div>
           </div>
 
-          <div class="flex flex-wrap gap-2">
-              <span class="text-xs font-bold text-yellow-700 w-full">CARGAR DATOS DEL SET:</span>
-              <button @click="cargarCaso(1)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 1 (Aceite)</button>
-              <button @click="cargarCaso(2)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 2 (Regalo)</button>
-              <button @click="cargarCaso(3)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 3 (Sandwic)</button>
-              <button @click="cargarCaso(4)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 4 (Exento)</button>
-              <button @click="cargarCaso(5)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 5 (Arroz)</button>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <button @click="cargarCaso(1)" :class="getBotonClass(1)">
+                  <div class="font-black">CASO 1</div>
+                  <div class="text-[10px] opacity-80">Aceite + Alineación</div>
+              </button>
+              <button @click="cargarCaso(2)" :class="getBotonClass(2)">
+                  <div class="font-black">CASO 2</div>
+                  <div class="text-[10px] opacity-80">17 Regalos</div>
+              </button>
+              <button @click="cargarCaso(3)" :class="getBotonClass(3)">
+                  <div class="font-black">CASO 3</div>
+                  <div class="text-[10px] opacity-80">Sandwic + Bebida</div>
+              </button>
+              <button @click="cargarCaso(4)" :class="getBotonClass(4)">
+                  <div class="font-black">CASO 4</div>
+                  <div class="text-[10px] opacity-80">Afecto + Exento</div>
+              </button>
+              <button @click="cargarCaso(5)" :class="getBotonClass(5)">
+                  <div class="font-black">CASO 5</div>
+                  <div class="text-[10px] opacity-80">Arroz (Kg)</div>
+              </button>
           </div>
       </div>
     </div>
@@ -66,9 +85,9 @@
 
       <!-- LADO DERECHO: TICKET -->
       <div class="bg-[var(--panel)] rounded flex flex-col h-full border border-[var(--border)] shadow-sm overflow-hidden">
-         <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)] flex justify-between items-center">
+         <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)] flex justify-between items-center" :class="{'bg-yellow-100 dark:bg-yellow-900': modoPruebas}">
              <h3 class="font-bold text-lg">Ticket</h3>
-             <span v-if="tipoVenta" class="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded font-bold">{{ tipoVenta }} (F:{{ folioManual }})</span>
+             <span v-if="tipoVenta" class="text-xs bg-yellow-300 text-yellow-900 px-2 py-1 rounded font-bold border border-yellow-500 shadow-sm">{{ tipoVenta }} (F:{{ folioManual }})</span>
          </div>
 
          <div class="flex-1 overflow-y-auto p-2 custom-scroll">
@@ -102,9 +121,12 @@
                 class="w-full py-4 rounded font-bold shadow-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2"
                 :class="modoPruebas ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-green-600 hover:bg-green-500 text-white'"
                 :disabled="procesando">
-                <span v-if="procesando">Procesando...</span>
+                <span v-if="procesando">
+                    <svg class="animate-spin h-5 w-5 mr-3 inline" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Procesando...
+                </span>
                 <span v-else>
-                    {{ modoPruebas ? `EMITIR DTE PRUEBA (FOLIO ${folioManual})` : 'PAGAR' }}
+                    {{ modoPruebas ? `EMITIR CERTIFICACIÓN (FOLIO ${folioManual})` : 'PAGAR' }}
                 </span>
              </button>
          </div>
@@ -128,9 +150,17 @@ const procesando = ref(false)
 // Estados para certificación
 const modoPruebas = ref(false)
 const tipoVenta = ref('')
-const folioManual = ref(1) // Empezamos en 1, el usuario lo cambia
+const folioManual = ref(1) // Iniciamos en 1, asegúrate de que coincida con tu CAF
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
+
+function getBotonClass(n) {
+    const base = "px-2 py-2 rounded shadow-sm border transition flex flex-col items-center justify-center h-16 ";
+    if (tipoVenta.value === `CASO-${n}`) {
+        return base + "bg-yellow-500 text-white border-yellow-600 ring-2 ring-yellow-300 transform scale-105";
+    }
+    return base + "bg-white text-yellow-800 border-yellow-300 hover:bg-yellow-100";
+}
 
 async function search() {
     try {
@@ -155,39 +185,54 @@ async function handleScanEnter() {
    scan.value = ''
 }
 
-// --- CARGADOR DE CASOS DE PRUEBA (Datos Exactos del TXT) ---
+// --- CARGADOR DE CASOS DE PRUEBA (Datos Exactos del Set Prueba BE (2).txt) ---
 function cargarCaso(n) {
     cart.value = [];
     tipoVenta.value = `CASO-${n}`;
-    // Usamos un ID dummy (1) pero con los nombres y precios reales del PDF.
+    // Usamos un ID dummy (1) pero con los nombres y precios reales del Set de Pruebas.
     // El backend leerá estos nombres para generar el XML.
     const idDummy = 1; 
 
     if (n === 1) {
+        // CASO-1: Cambio de aceite (1 x 19900), Alineacion y balanceo (1 x 9900)
         cart.value.push({ id_producto: idDummy, nombre: "Cambio de aceite", precio: 19900, cantidad: 1, subtotal: 19900 });
         cart.value.push({ id_producto: idDummy, nombre: "Alineacion y balanceo", precio: 9900, cantidad: 1, subtotal: 9900 });
     } else if (n === 2) {
+        // CASO-2: Papel de regalo (17 x 120)
         cart.value.push({ id_producto: idDummy, nombre: "Papel de regalo", precio: 120, cantidad: 17, subtotal: 120*17 });
     } else if (n === 3) {
+        // CASO-3: Sandwic (2 x 1500), Bebida (2 x 550)
         cart.value.push({ id_producto: idDummy, nombre: "Sandwic", precio: 1500, cantidad: 2, subtotal: 1500*2 });
         cart.value.push({ id_producto: idDummy, nombre: "Bebida", precio: 550, cantidad: 2, subtotal: 550*2 });
     } else if (n === 4) {
-        // OJO: Nombres deben coincidir con la lógica del backend para detectar exento
+        // CASO-4: item afecto 1 (8 x 1590), item exento 2 (2 x 1000)
+        // NOTA: Nombres deben coincidir con la lógica del backend para detectar 'exento'
         cart.value.push({ id_producto: idDummy, nombre: "item afecto 1", precio: 1590, cantidad: 8, subtotal: 1590*8 });
         cart.value.push({ id_producto: idDummy, nombre: "item exento 2", precio: 1000, cantidad: 2, subtotal: 1000*2 });
     } else if (n === 5) {
-        // Backend detecta CASO-5 y añade "Kg"
+        // CASO-5: Arroz (5 x 700). Backend debe añadir unidad "Kg"
         cart.value.push({ id_producto: idDummy, nombre: "Arroz", precio: 700, cantidad: 5, subtotal: 700*5 });
     }
 }
 
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0))
+
 async function procesarVenta() {
     if (cart.value.length === 0) return alert('El carrito está vacío')
     if (procesando.value) return
 
     procesando.value = true
     const user = currentUser.value || {}
+
+    // Debug del folio manual antes de enviar
+    if (modoPruebas.value) {
+        console.log(`🚀 Enviando Caso: ${tipoVenta.value} con Folio Manual: ${folioManual.value}`);
+        if (!folioManual.value || folioManual.value <= 0) {
+            alert("⚠️ Error: El folio manual debe ser mayor a 0");
+            procesando.value = false;
+            return;
+        }
+    }
 
     // Payload para guardar en BD Local
     const payloadVenta = {
@@ -198,7 +243,7 @@ async function procesarVenta() {
             id_producto: i.id_producto, 
             cantidad: i.cantidad, 
             precio_unitario: i.precio, 
-            nombre: i.nombre
+            nombre: i.nombre // CRÍTICO: Enviamos el nombre del caso de prueba
         })),
         pagos: [{ id_pago: 1, monto: total.value }],
         usarImpresora: false 
@@ -218,7 +263,7 @@ async function procesarVenta() {
                 const resDte = await api.post('/dte/emitir-prueba', { 
                     idVenta: dataVenta.venta.id_venta, 
                     caso: tipoVenta.value,
-                    folioManual: folioManual.value // Envía el folio 1, 2, 3...
+                    folioManual: folioManual.value // Envía el folio explícito
                 })
                 
                 const dteData = resDte.data;
@@ -238,19 +283,20 @@ async function procesarVenta() {
                 }
                 // ---------------------------------------------
 
-                alert(`ÉXITO: Caso ${tipoVenta.value} (Folio ${folioFinal}) generado y XML descargado.`);
+                alert(`✅ ÉXITO: Caso ${tipoVenta.value} (Folio ${folioFinal}) generado y XML descargado.`);
                 
                 // Auto-incrementar para el siguiente caso
                 folioManual.value++;
 
             } catch (errDte) {
                 console.error("Fallo DTE:", errDte);
-                alert("Falló envío al SII: " + errDte.message);
+                alert("❌ Falló envío al SII: " + errDte.message);
                 procesando.value = false;
                 return; 
             }
         }
 
+        // 3. Imprimir (Código igual que antes...)
         if (window.electronAPI?.printFromData) {
              const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
              const printData = {
@@ -269,6 +315,7 @@ async function procesarVenta() {
             await window.electronAPI.printFromData(printData, opts)
         }
 
+        // Limpiar
         cart.value = []
         if (modoPruebas.value) tipoVenta.value = '' 
 
