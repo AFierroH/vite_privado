@@ -182,7 +182,6 @@ function cargarCaso(n) {
 }
 
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0))
-
 async function procesarVenta() {
     if (cart.value.length === 0) return alert('El carrito está vacío')
     if (procesando.value) return
@@ -195,12 +194,11 @@ async function procesarVenta() {
         id_usuario: user.id || 1,
         id_empresa: user.empresaId || 1,
         total: total.value,
-        // Enviamos el nombre explícito para que el backend lo guarde en detalle_venta
         detalles: cart.value.map(i => ({ 
             id_producto: i.id_producto, 
             cantidad: i.cantidad, 
             precio_unitario: i.precio, 
-            nombre: i.nombre // CRÍTICO: Enviamos el nombre del caso de prueba
+            nombre: i.nombre
         })),
         pagos: [{ id_pago: 1, monto: total.value }],
         usarImpresora: false 
@@ -217,11 +215,10 @@ async function procesarVenta() {
         // 2. Si estamos en modo pruebas, llamamos al endpoint de certificación
         if (modoPruebas.value) {
             try {
-                // Enviamos el Folio Manual al backend
                 const resDte = await api.post('/dte/emitir-prueba', { 
                     idVenta: dataVenta.venta.id_venta, 
                     caso: tipoVenta.value,
-                    folioManual: folioManual.value // <--- IMPORTANTE
+                    folioManual: folioManual.value // Envía el folio 1, 2, 3...
                 })
                 
                 const dteData = resDte.data;
@@ -229,23 +226,34 @@ async function procesarVenta() {
 
                 folioFinal = dteData.folio;
                 timbreFinal = dteData.timbre;
-                alert(`✅ ÉXITO: Caso ${tipoVenta.value} con Folio ${folioFinal} generado.`);
+
+                // --- NUEVO: DESCARGAR XML AUTOMÁTICAMENTE ---
+                if (dteData.xml) {
+                    const blob = new Blob([dteData.xml], { type: 'text/xml' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `DTE_Boleta_${folioFinal}_${tipoVenta.value}.xml`;
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                }
+                // ---------------------------------------------
+
+                alert(`ÉXITO: Caso ${tipoVenta.value} (Folio ${folioFinal}) generado y XML descargado.`);
                 
                 // Auto-incrementar para el siguiente caso
                 folioManual.value++;
 
             } catch (errDte) {
                 console.error("Fallo DTE:", errDte);
-                alert("❌ Falló envío al SII: " + errDte.message);
+                alert("Falló envío al SII: " + errDte.message);
                 procesando.value = false;
                 return; 
             }
         }
 
-        // 3. Imprimir (Siempre intentamos imprimir, sea prueba o real)
         if (window.electronAPI?.printFromData) {
-            const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
-            const printData = {
+             const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
+             const printData = {
                 empresa: { razonSocial: 'MIPOSRA SPA', rut: '21.289.176-2', direccion: 'Temuco' },
                 venta: { id_venta: folioFinal, fecha: new Date().toLocaleString() },
                 detalles: payloadVenta.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
@@ -261,7 +269,6 @@ async function procesarVenta() {
             await window.electronAPI.printFromData(printData, opts)
         }
 
-        // Limpiar todo al finalizar
         cart.value = []
         if (modoPruebas.value) tipoVenta.value = '' 
 
