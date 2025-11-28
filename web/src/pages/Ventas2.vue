@@ -293,7 +293,14 @@ async function procesarVenta() {
 
         // 3. Imprimir (opcional)
         if (window.electronAPI?.printFromData) {
-             const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
+            const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
+            
+            // LOG DE DEPURACIÓN
+            console.log("🖨️ DATOS A IMPRIMIR:", {
+                folio: folioFinal,
+                tieneTimbre: !!timbreFinal,
+                contenido417: timbreFinal || folioFinal
+            });
              const printData = {
                 empresa: { razonSocial: 'MIPOSRA SPA', rut: '21.289.176-2', direccion: 'Temuco' },
                 venta: { id_venta: folioFinal, fecha: new Date().toLocaleString() },
@@ -305,7 +312,7 @@ async function procesarVenta() {
                 ip: savedConfig.info?.ip,
                 vid: savedConfig.lastUsbVid,
                 pid: savedConfig.lastUsbPid,
-                content417: timbreFinal || folioFinal
+                content417: timbreFinal || folioFinal // <--- Aquí es donde se envía
             }
             await window.electronAPI.printFromData(printData, opts)
         }

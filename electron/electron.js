@@ -3,9 +3,9 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
-import iconv from 'iconv-lite';
+// import iconv from 'iconv-lite'; // No se usa por ahora
 import bwipjs from 'bwip-js';
-import { PNG } from 'pngjs';
+// import { PNG } from 'pngjs'; // No se usa explícitamente si usamos Jimp/Escpos
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -20,20 +20,65 @@ const Jimp = require('jimp');
 let mainWindow = null;
 let cachedLogoImage = null; 
 const DEFAULT_CODEPAGE = 'CP858';
-
-// ANCHO DE PAPEL: Si tu impresora es de 80mm, usa 48 o 42.
-// Si los precios se bajan de línea, reduce este número a 42.
-const PRINTER_WIDTH = 48; 
+const PRINTER_WIDTH = 48; // Ajustar a 42 o 48 según impresora (80mm)
 
 // -------------------- HELPERS --------------------
 function formatCLP(num) { return '$ ' + new Intl.NumberFormat('es-CL').format(num); }
+
+// NUEVO: Genera una imagen PNG del PDF417 a partir del string del timbre (TED)
+async function generatePdf417(data) {
+    return new Promise((resolve, reject) => {
+        console.log("--> Intentando generar PDF417 con data:", data ? data.substring(0, 50) + "..." : "NULO");
+
+        if (!data) {
+            console.error("Error: Data para PDF417 es nula o vacía");
+            return resolve(null);
+        }
+
+        bwipjs.toBuffer({
+            bcid: 'pdf417',
+            text: data,
+            scale: 2,
+            height: 10,
+            includetext: false,
+            eclevel: 5,
+            columns: 6
+        }, function (err, png) {
+            if (err) {
+                console.error("Error BWIP-JS:", err);
+                resolve(null);
+            } else {
+                const tempPath = path.join(app.getPath('temp'), `pdf417_${Date.now()}.png`);
+                fs.writeFileSync(tempPath, png);
+                
+                // Agregamos log aquí
+                console.log("Imagen PNG creada en:", tempPath);
+
+                escpos.Image.load(tempPath, function(img) {
+                    // Verificamos si img cargó
+                    if(!img) {
+                        console.error("Error: escpos.Image.load devolvió null (falló la carga del PNG)");
+                        resolve(null);
+                        return;
+                    }
+
+                    console.log("Imagen cargada en memoria para escpos");
+                    try {
+                        fs.unlinkSync(tempPath); 
+                    } catch(e) {} 
+                    resolve(img);
+                });
+            }
+        });
+    });
+}
 
 async function processLogoForEscpos(urlOrPath) {
     return new Promise((resolve, reject) => {
         Jimp.read(urlOrPath)
             .then(image => {
-                image.scaleToFit(150, 40).greyscale();
-                const tempPath = path.join(process.env.TEMP || __dirname, 'temp_logo.png');
+                image.scaleToFit(200, 100).greyscale(); // Logo un poco más grande
+                const tempPath = path.join(app.getPath('temp'), 'temp_logo.png');
                 image.writeAsync(tempPath)
                      .then(() => { escpos.Image.load(tempPath, function(img){ resolve(img); }); })
                      .catch(reject);
@@ -64,7 +109,14 @@ async function printTicket(sale, opts) {
                 return reject("Faltan datos de conexión");
             }
 
-            // IMPORTANTE: Pasamos el ancho al driver
+            // 1. Generar PDF417 antes de abrir impresora para no bloquear el puerto
+            // opts.content417 contiene el string XML del timbre (<TED>...</TED>)
+            let pdf417Img = null;
+            if (opts.content417) {
+                console.log("Generando imagen PDF417...");
+                pdf417Img = await generatePdf417(opts.content417);
+            }
+
             printer = new escpos.Printer(device, { encoding: DEFAULT_CODEPAGE, width: PRINTER_WIDTH });
 
             device.open(async function(err) {
@@ -86,12 +138,12 @@ async function printTicket(sale, opts) {
 
                     printer.align('lt')
                            .text('-'.repeat(PRINTER_WIDTH))
-                           .text(`BOLETA: ${sale.venta.id_venta}`)
+                           // Cambiamos "BOLETA" por "BOLETA ELECTRONICA" si hay timbre
+                           .text(`${pdf417Img ? 'BOLETA ELECTRONICA' : 'TICKET'} N: ${sale.venta.id_venta}`) 
                            .text(`FECHA:  ${sale.venta.fecha}`)
                            .text('-'.repeat(PRINTER_WIDTH));
 
-                    // C. DETALLES (CON TABLA AJUSTADA A LA DERECHA)
-                    // Ajuste de anchos: 15% Cantidad, 50% Nombre, 35% Precio (Alineado derecha)
+                    // C. DETALLES
                     printer.tableCustom([
                         { text: "CANT", align: "LEFT", width: 0.15 },
                         { text: "DESCRIPCION", align: "LEFT", width: 0.50 },
@@ -100,7 +152,6 @@ async function printTicket(sale, opts) {
 
                     sale.detalles.forEach(d => {
                          const totalStr = formatCLP(d.subtotal);
-                         // Recortar nombre si es muy largo para que no rompa la tabla
                          const nombreCorto = d.nombre.substring(0, 22); 
                          
                          printer.tableCustom([
@@ -112,45 +163,39 @@ async function printTicket(sale, opts) {
 
                     printer.text('-'.repeat(PRINTER_WIDTH));
                     
-                    // D. TOTALES (NETO + IVA + TOTAL)
+                    // D. TOTALES
                     const total = sale.total;
                     const neto = Math.round(total / 1.19);
                     const iva = total - neto;
 
-                    const totalFmt = formatCLP(total);
-                    const netoFmt = formatCLP(neto);
-                    const ivaFmt = formatCLP(iva);
-                    
-                    // Alineación derecha nativa
-                    printer.align('rt') 
-                           .style('normal')
-                           .text(`Neto: ${netoFmt}`)
-                           .text(`IVA (19%): ${ivaFmt}`)
+                    printer.align('rt').style('normal')
+                           .text(`Neto: ${formatCLP(neto)}`)
+                           .text(`IVA (19%): ${formatCLP(iva)}`)
                            .feed(1);
 
-                    // TOTAL GRANDE
-                    printer.align('rt')
-                           .style('b').size(1, 1)
-                           .text(`TOTAL: ${totalFmt}`)
-                           .size(0.5, 0.5).style('normal')
-                           .align('ct').feed(1);
+                    printer.align('rt').style('b').size(1, 1)
+                           .text(`TOTAL: ${formatCLP(total)}`)
+                           .size(0.5, 0.5).style('normal').align('ct').feed(1);
 
-                    // E. QR (TIMBRE)
-                    const timbre = opts.content417 || `VENTA-${sale.venta.id_venta}`;
-                    
-                    try {
-                        printer.qrimage(timbre, function(){
-                             this.text('TIMBRE ELECTRONICO SII');
-                             this.text('Verifique en www.sii.cl');
-                             this.feed(2);
-                             this.cut();
-                             this.close(); 
-                             resolve({ ok: true });
-                        });
-                    } catch(e) {
-                        printer.cut().close();
-                        resolve({ ok: true });
+                    // E. TIMBRE PDF417 (REEMPLAZO DEL QR)
+                    if (pdf417Img) {
+                        // Imprimimos la imagen del PDF417 centrada
+                        // 's8' es un modo de escalado estándar que suele funcionar bien
+                        await printer.image(pdf417Img, 's8'); 
+                        
+                        // Leyenda obligatoria bajo el timbre
+                        printer.feed(1);
+                        printer.text('Timbre Electronico SII');
+                        printer.text('Res. 80 de 2014 - Verifique en www.sii.cl');
+                    } else {
+                        // Si no es boleta electrónica, mostramos esto o el QR antiguo
+                        printer.text('(Comprobante Interno - Sin Valor Tributario)');
                     }
+
+                    printer.feed(2);
+                    printer.cut();
+                    printer.close(); 
+                    resolve({ ok: true });
 
                 } catch (pError) {
                     device.close();
@@ -198,7 +243,7 @@ ipcMain.handle("discover-lan-printers", async () => ({ results: [] }));
 function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200, height: 800,
-      icon: path.join(__dirname, 'build/icon.ico'), // Opcional: si tienes ícono
+      icon: path.join(__dirname, 'build/icon.ico'), 
       webPreferences: { 
         preload: path.join(__dirname, 'preload.cjs'), 
         contextIsolation: true, 
@@ -206,19 +251,15 @@ function createWindow() {
       }
     });
 
-    // LÓGICA DE URL
-    const isDev = !app.isPackaged; // True si corres npm start, False si es .exe
+    const isDev = !app.isPackaged; 
 
     if (isDev) {
-        console.log('Modo Desarrollo: Cargando localhost');
-        mainWindow.loadURL('https://localhost:5173'); 
+        console.log('Modo Desarrollo');
+        mainWindow.loadURL('http://localhost:5173'); // Asegúrate que sea http si no tienes https local
         mainWindow.webContents.openDevTools();
     } else {
-        console.log('Modo Producción: Cargando Servidor VPS');
-        // AQUÍ PONES TU IP PÚBLICA
+        console.log('Modo Producción');
         mainWindow.loadURL('https://miposra.site'); 
-        
-        // Opcional: Quitar menú superior en producción
         mainWindow.setMenuBarVisibility(false);
     }
 }
