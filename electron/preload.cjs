@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printRaw: (data, opts) => ipcRenderer.invoke('printRaw', data, opts),
   detectScanners: () => ipcRenderer.invoke('detectScanners'),
   discoverLanPrinters: (opts) => ipcRenderer.invoke('discover-lan-printers', opts),
-
+  getLocalIp: () => ipcRenderer.invoke('getLocalIp'),
   buildTicket: (sale, opts) => ipcRenderer.invoke('buildTicket', sale, opts),
   printFromData: (sale, opts) => ipcRenderer.invoke('printFromData', sale, opts),
   cacheLogo: (url) => ipcRenderer.invoke('cacheLogo', url),
