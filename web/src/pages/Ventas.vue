@@ -209,28 +209,52 @@ async function checkout() {
     const user = currentUser.value || {}
     const empresa = session.empresa || {}
 
+    // Payload limpio para el backend
     const payload = {
         id_usuario: user.id || 1,
         id_empresa: user.empresaId || 1,
         total: total.value,
-        detalles: cart.value.map(i => ({ id_producto: i.id_producto, cantidad: i.cantidad, precio_unitario: i.precio, nombre: i.nombre })),
+        detalles: cart.value.map(i => ({ 
+            id_producto: i.id_producto, 
+            cantidad: i.cantidad, 
+            precio_unitario: i.precio, 
+            nombre: i.nombre 
+        })),
         pagos: [{ id_pago: 1, monto: total.value }],
-        usarImpresora: usarImpresora.value
+        usarImpresora: false // El backend ya no imprime directo, lo hace el front con electron
     }
 
     try {
+        isLoading.value = true;
+        
+        // 1. Llamada al Backend (que ahora llama a SimpleAPI)
+        // NOTA: Asegúrate que emitirVenta apunte a tu endpoint modificado en NestJS
         const resp = await emitirVenta(payload)
         const data = resp?.data ?? resp
+        
         if (!data) throw new Error("Sin respuesta del servidor")
 
+        // Data debe traer: { venta: {...}, timbre: "<TED>...", folio: 123 }
+        const folioReal = data.folio || data.venta?.id_venta || '---';
+        const timbreXml = data.timbre; // Este es el string XML del TED
+
+        console.log("Venta Exitosa. Folio:", folioReal);
+        if(timbreXml) console.log("Tenemos Timbre para imprimir");
+        else console.warn("Venta sin timbre SII");
+
+        // 2. Imprimir vía Electron
         if (usarImpresora.value && window.electronAPI?.printFromData) {
+            
             const printData = {
                 empresa: { 
-                    razonSocial: empresa.nombre || 'Sin Nombre', 
-                    rut: empresa.rut || '', 
-                    direccion: empresa.direccion || '',
+                    razonSocial: empresa.nombre || 'MIPOSRA SPA', 
+                    rut: empresa.rut || '21.289.176-2', 
+                    direccion: empresa.direccion || 'Temuco',
                 },
-                venta: { id_venta: data.venta?.id_venta || data.id_venta || '---', fecha: new Date().toLocaleString() },
+                venta: { 
+                    id_venta: folioReal, // Usamos el folio real
+                    fecha: new Date().toLocaleString() 
+                },
                 detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
                 total: total.value
             }
@@ -241,7 +265,8 @@ async function checkout() {
                 port: printerInfo.value.port,
                 vid: selectedUsbDevice.value?.vid,
                 pid: selectedUsbDevice.value?.pid,
-                content417: data.timbre || `VENTA-${data.id_venta}`
+                // AQUÍ LA CLAVE: Enviamos el XML del timbre
+                content417: timbreXml // Si es null, electron imprimirá "Sin Valor Tributario"
             }
 
             const r = await window.electronAPI.printFromData(printData, opts)
@@ -249,11 +274,14 @@ async function checkout() {
         }
 
         cart.value = []
-        alert('Venta Finalizada Correctamente')
+        // Opcional: Mostrar mensaje de éxito bonito
+        // alert(`Venta ${folioReal} Finalizada Correctamente`)
 
     } catch (e) {
         console.error(e)
         alert('Error en venta: ' + (e.message || e))
+    } finally {
+        isLoading.value = false;
     }
 }
 

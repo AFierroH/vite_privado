@@ -28,46 +28,44 @@ function formatCLP(num) { return '$ ' + new Intl.NumberFormat('es-CL').format(nu
 // NUEVO: Genera una imagen PNG del PDF417 a partir del string del timbre (TED)
 async function generatePdf417(data) {
     return new Promise((resolve, reject) => {
-        console.log("--> Intentando generar PDF417 con data:", data ? data.substring(0, 50) + "..." : "NULO");
-
-        if (!data) {
-            console.error("Error: Data para PDF417 es nula o vacía");
-            return resolve(null);
-        }
+        if (!data) return resolve(null);
+        
+        // Limpieza básica: Eliminar saltos de línea extremos que a veces trae el XML
+        const cleanData = data.trim(); 
+        console.log("--> Generando PDF417 SII. Longitud:", cleanData.length);
 
         bwipjs.toBuffer({
-            bcid: 'pdf417',
-            text: data,
-            scale: 2,
-            height: 10,
-            includetext: false,
-            eclevel: 5,
-            columns: 6
+            bcid: 'pdf417',       // Tipo de código
+            text: cleanData,      // El XML completo <TED>...</TED>
+            scale: 2,             // Escala (2 suele ser legible en térmica)
+            height: 10,           // Altura de las barras (mm aprox)
+            includetext: false,   // No imprimir el texto del XML abajo (es muy largo)
+            eclevel: 5,           // Nivel de corrección de errores (SII pide alto)
+            columns: 16           // IMPORTANTE: Forzar columnas ayuda a la impresora térmica
         }, function (err, png) {
             if (err) {
-                console.error("Error BWIP-JS:", err);
+                console.error("❌ Error BWIP-JS:", err);
                 resolve(null);
             } else {
                 const tempPath = path.join(app.getPath('temp'), `pdf417_${Date.now()}.png`);
-                fs.writeFileSync(tempPath, png);
-                
-                // Agregamos log aquí
-                console.log("Imagen PNG creada en:", tempPath);
-
-                escpos.Image.load(tempPath, function(img) {
-                    // Verificamos si img cargó
-                    if(!img) {
-                        console.error("Error: escpos.Image.load devolvió null (falló la carga del PNG)");
-                        resolve(null);
-                        return;
-                    }
-
-                    console.log("Imagen cargada en memoria para escpos");
-                    try {
-                        fs.unlinkSync(tempPath); 
-                    } catch(e) {} 
-                    resolve(img);
-                });
+                try {
+                    fs.writeFileSync(tempPath, png);
+                    console.log("✅ Imagen PDF417 guardada temporalmente:", tempPath);
+                    
+                    escpos.Image.load(tempPath, function(img) {
+                        if(!img) {
+                             console.error("Error cargando imagen en escpos");
+                             resolve(null);
+                        } else {
+                             // Intentar borrar archivo temp
+                             try { fs.unlinkSync(tempPath); } catch(e){}
+                             resolve(img);
+                        }
+                    });
+                } catch(ioErr) {
+                    console.error("Error IO:", ioErr);
+                    resolve(null);
+                }
             }
         });
     });
@@ -113,8 +111,11 @@ async function printTicket(sale, opts) {
             // opts.content417 contiene el string XML del timbre (<TED>...</TED>)
             let pdf417Img = null;
             if (opts.content417) {
-                console.log("Generando imagen PDF417...");
-                pdf417Img = await generatePdf417(opts.content417);
+                try {
+                    pdf417Img = await generatePdf417(opts.content417);
+                } catch(e) {
+                    console.error("Fallo generando PDF417:", e);
+                }
             }
 
             printer = new escpos.Printer(device, { encoding: DEFAULT_CODEPAGE, width: PRINTER_WIDTH });
@@ -179,17 +180,13 @@ async function printTicket(sale, opts) {
 
                     // E. TIMBRE PDF417 (REEMPLAZO DEL QR)
                     if (pdf417Img) {
-                        // Imprimimos la imagen del PDF417 centrada
-                        // 's8' es un modo de escalado estándar que suele funcionar bien
-                        await printer.image(pdf417Img, 's8'); 
-                        
-                        // Leyenda obligatoria bajo el timbre
+                        printer.align('ct'); // Centrar
+                        await printer.image(pdf417Img, 's8'); // 's8' o 'd24' suelen funcionar bien
                         printer.feed(1);
                         printer.text('Timbre Electronico SII');
                         printer.text('Res. 80 de 2014 - Verifique en www.sii.cl');
                     } else {
-                        // Si no es boleta electrónica, mostramos esto o el QR antiguo
-                        printer.text('(Comprobante Interno - Sin Valor Tributario)');
+                        printer.text('(Sin Timbre SII - Error Generacion)');
                     }
 
                     printer.feed(2);
