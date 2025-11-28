@@ -18,13 +18,23 @@
       </div>
 
       <!-- BOTONERA DE PRUEBAS (SOLO VISIBLE SI ACTIVAS EL SWITCH) -->
-      <div v-if="modoPruebas" class="flex flex-wrap gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200">
-          <span class="text-xs font-bold text-yellow-700 w-full">CARGAR CASO:</span>
-          <button @click="cargarCaso(1)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 1 (Aceite)</button>
-          <button @click="cargarCaso(2)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 2 (Regalo)</button>
-          <button @click="cargarCaso(3)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 3 (Sandwic)</button>
-          <button @click="cargarCaso(4)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 4 (Exento)</button>
-          <button @click="cargarCaso(5)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 5 (Arroz)</button>
+      <div v-if="modoPruebas" class="flex flex-col gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200">
+          
+          <div class="flex items-center gap-3 mb-2 pb-2 border-b border-yellow-200">
+              <span class="text-sm font-bold text-yellow-800">FOLIO A USAR:</span>
+              <!-- Input para controlar manualmente el folio, vital para pruebas -->
+              <input type="number" v-model.number="folioManual" class="w-20 p-1 text-center font-bold text-lg border border-yellow-400 rounded bg-white text-black" min="1" />
+              <span class="text-xs text-yellow-600">(Cambia este número para cada caso: 1, 2, 3...)</span>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+              <span class="text-xs font-bold text-yellow-700 w-full">CARGAR DATOS DEL SET:</span>
+              <button @click="cargarCaso(1)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 1 (Aceite)</button>
+              <button @click="cargarCaso(2)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 2 (Regalo)</button>
+              <button @click="cargarCaso(3)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 3 (Sandwic)</button>
+              <button @click="cargarCaso(4)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 4 (Exento)</button>
+              <button @click="cargarCaso(5)" class="px-3 py-1 text-xs font-bold bg-white border border-yellow-400 rounded hover:bg-yellow-100 shadow-sm">CASO 5 (Arroz)</button>
+          </div>
       </div>
     </div>
 
@@ -58,7 +68,7 @@
       <div class="bg-[var(--panel)] rounded flex flex-col h-full border border-[var(--border)] shadow-sm overflow-hidden">
          <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)] flex justify-between items-center">
              <h3 class="font-bold text-lg">Ticket</h3>
-             <span v-if="tipoVenta" class="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded font-bold">{{ tipoVenta }}</span>
+             <span v-if="tipoVenta" class="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded font-bold">{{ tipoVenta }} (F:{{ folioManual }})</span>
          </div>
 
          <div class="flex-1 overflow-y-auto p-2 custom-scroll">
@@ -94,7 +104,7 @@
                 :disabled="procesando">
                 <span v-if="procesando">Procesando...</span>
                 <span v-else>
-                    {{ modoPruebas ? `EMITIR DTE (${tipoVenta})` : 'PAGAR' }}
+                    {{ modoPruebas ? `EMITIR DTE PRUEBA (FOLIO ${folioManual})` : 'PAGAR' }}
                 </span>
              </button>
          </div>
@@ -117,7 +127,8 @@ const procesando = ref(false)
 
 // Estados para certificación
 const modoPruebas = ref(false)
-const tipoVenta = ref('') 
+const tipoVenta = ref('')
+const folioManual = ref(1) // Empezamos en 1, el usuario lo cambia
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
 
@@ -144,11 +155,13 @@ async function handleScanEnter() {
    scan.value = ''
 }
 
-// --- CARGADOR DE CASOS DE PRUEBA ---
+// --- CARGADOR DE CASOS DE PRUEBA (Datos Exactos del TXT) ---
 function cargarCaso(n) {
     cart.value = [];
     tipoVenta.value = `CASO-${n}`;
-    const idDummy = 1; // ID genérico, el backend usará el nombre y precio que mandemos aquí
+    // Usamos un ID dummy (1) pero con los nombres y precios reales del PDF.
+    // El backend leerá estos nombres para generar el XML.
+    const idDummy = 1; 
 
     if (n === 1) {
         cart.value.push({ id_producto: idDummy, nombre: "Cambio de aceite", precio: 19900, cantidad: 1, subtotal: 19900 });
@@ -163,6 +176,7 @@ function cargarCaso(n) {
         cart.value.push({ id_producto: idDummy, nombre: "item afecto 1", precio: 1590, cantidad: 8, subtotal: 1590*8 });
         cart.value.push({ id_producto: idDummy, nombre: "item exento 2", precio: 1000, cantidad: 2, subtotal: 1000*2 });
     } else if (n === 5) {
+        // Backend detecta CASO-5 y añade "Kg"
         cart.value.push({ id_producto: idDummy, nombre: "Arroz", precio: 700, cantidad: 5, subtotal: 700*5 });
     }
 }
@@ -203,9 +217,11 @@ async function procesarVenta() {
         // 2. Si estamos en modo pruebas, llamamos al endpoint de certificación
         if (modoPruebas.value) {
             try {
+                // Enviamos el Folio Manual al backend
                 const resDte = await api.post('/dte/emitir-prueba', { 
                     idVenta: dataVenta.venta.id_venta, 
-                    caso: tipoVenta.value 
+                    caso: tipoVenta.value,
+                    folioManual: folioManual.value // <--- IMPORTANTE
                 })
                 
                 const dteData = resDte.data;
@@ -213,11 +229,14 @@ async function procesarVenta() {
 
                 folioFinal = dteData.folio;
                 timbreFinal = dteData.timbre;
-                alert(`✅ ÉXITO SII: Folio ${folioFinal} generado.`);
+                alert(`✅ ÉXITO: Caso ${tipoVenta.value} con Folio ${folioFinal} generado.`);
+                
+                // Auto-incrementar para el siguiente caso
+                folioManual.value++;
+
             } catch (errDte) {
                 console.error("Fallo DTE:", errDte);
                 alert("❌ Falló envío al SII: " + errDte.message);
-                // Si falla el DTE en pruebas, detenemos el flujo
                 procesando.value = false;
                 return; 
             }
@@ -244,7 +263,7 @@ async function procesarVenta() {
 
         // Limpiar todo al finalizar
         cart.value = []
-        if (modoPruebas.value) tipoVenta.value = '' // Limpiar caso
+        if (modoPruebas.value) tipoVenta.value = '' 
 
     } catch (e) {
         console.error(e)
