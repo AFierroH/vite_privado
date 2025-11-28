@@ -113,6 +113,7 @@
                  <span class="text-3xl font-bold text-[var(--accent)]">{{ formatPrice(total) }}</span>
              </div>
              
+             <!-- BOTON PRINCIPAL DE PAGO -->
              <button @click="procesarVenta" 
                 class="w-full py-4 rounded font-bold shadow-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2"
                 :class="modoPruebas ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-green-600 hover:bg-green-500 text-white'"
@@ -146,7 +147,7 @@ const procesando = ref(false)
 // Estados para certificación
 const modoPruebas = ref(false)
 const tipoVenta = ref('')
-const folioManual = ref(1) // Empieza en 1
+const folioManual = ref(1) // Empieza en 1, asegúrate de que coincida con tu CAF
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
 
@@ -181,27 +182,32 @@ async function handleScanEnter() {
    scan.value = ''
 }
 
-// --- CARGADOR DE CASOS DE PRUEBA (Datos Exactos del PDF) ---
+// --- CARGADOR DE CASOS DE PRUEBA (Datos Exactos del TXT) ---
 function cargarCaso(n) {
     cart.value = [];
     tipoVenta.value = `CASO-${n}`;
+    // Usamos un ID dummy (1) pero con los nombres y precios reales del Set de Pruebas.
+    // El backend leerá estos nombres para generar el XML.
     const idDummy = 1; 
 
-    // DATOS EXACTOS DEL SET DE PRUEBAS
     if (n === 1) {
+        // CASO-1: Cambio de aceite (1 x 19900), Alineacion y balanceo (1 x 9900)
         cart.value.push({ id_producto: idDummy, nombre: "Cambio de aceite", precio: 19900, cantidad: 1, subtotal: 19900 });
         cart.value.push({ id_producto: idDummy, nombre: "Alineacion y balanceo", precio: 9900, cantidad: 1, subtotal: 9900 });
     } else if (n === 2) {
+        // CASO-2: Papel de regalo (17 x 120)
         cart.value.push({ id_producto: idDummy, nombre: "Papel de regalo", precio: 120, cantidad: 17, subtotal: 120*17 });
     } else if (n === 3) {
+        // CASO-3: Sandwic (2 x 1500), Bebida (2 x 550)
         cart.value.push({ id_producto: idDummy, nombre: "Sandwic", precio: 1500, cantidad: 2, subtotal: 1500*2 });
         cart.value.push({ id_producto: idDummy, nombre: "Bebida", precio: 550, cantidad: 2, subtotal: 550*2 });
     } else if (n === 4) {
-        // Backend detecta "exento" en el nombre y pone IndExe=1
+        // CASO-4: item afecto 1 (8 x 1590), item exento 2 (2 x 1000)
+        // NOTA: Nombres deben coincidir con la lógica del backend para detectar 'exento'
         cart.value.push({ id_producto: idDummy, nombre: "item afecto 1", precio: 1590, cantidad: 8, subtotal: 1590*8 });
         cart.value.push({ id_producto: idDummy, nombre: "item exento 2", precio: 1000, cantidad: 2, subtotal: 1000*2 });
     } else if (n === 5) {
-        // Backend detecta CASO-5 y añade unidad "Kg"
+        // CASO-5: Arroz (5 x 700). Backend debe añadir unidad "Kg"
         cart.value.push({ id_producto: idDummy, nombre: "Arroz", precio: 700, cantidad: 5, subtotal: 700*5 });
     }
 }
@@ -217,7 +223,7 @@ async function procesarVenta() {
 
     // Debug: Verificar folio antes de enviar
     if (modoPruebas.value && (!folioManual.value || folioManual.value <= 0)) {
-        alert("El folio debe ser mayor a 0");
+        alert("⚠️ El folio debe ser mayor a 0");
         procesando.value = false;
         return;
     }
@@ -272,14 +278,14 @@ async function procesarVenta() {
                     window.URL.revokeObjectURL(url);
                 }
                 
-                alert(`Boleta SII Generada (Folio ${folioFinal}). XML descargado.`);
+                alert(`✅ Boleta SII Generada (Folio ${folioFinal}). XML descargado.`);
                 
                 // Subir folio para siguiente prueba
                 folioManual.value++;
 
             } catch (errDte) {
                 console.error("Fallo DTE:", errDte);
-                alert("Falló envío al SII: " + errDte.message);
+                alert("❌ Falló envío al SII: " + errDte.message);
                 procesando.value = false;
                 return; 
             }
