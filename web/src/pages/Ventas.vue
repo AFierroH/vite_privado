@@ -121,8 +121,8 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
-import { generarTicketEscPos } from "@/utils/escposEncoder.js";
-import { printFromWebRaw } from "@/utils/printWeb.js";
+import { generarTicketEscPos } from "../utils/escposEncoder.js";
+import { printFromWebRaw } from "../utils/printWeb.js";
 const { currentUser } = useAuth()
 
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
