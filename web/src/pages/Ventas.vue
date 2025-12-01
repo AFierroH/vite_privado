@@ -121,7 +121,8 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
-
+import { generarTicketEscPos } from "@/utils/escposEncoder.js";
+import { printFromWebRaw } from "@/utils/printWeb.js";
 const { currentUser } = useAuth()
 
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
@@ -131,6 +132,7 @@ const usarImpresora = ref(savedConfig.active !== undefined ? savedConfig.active 
 const usbDevices = ref([])
 const selectedUsbDevice = ref(null)
 const isLoading = ref(false)
+const isElectron = !!window.electronAPI;
 
 // Guardar config automáticamente
 watch([printerType, printerInfo, usarImpresora, selectedUsbDevice], () => {
@@ -202,6 +204,7 @@ function addProduct(p) {
 function clear() { cart.value = [] }
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0))
 
+
 async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío')
     
@@ -209,72 +212,61 @@ async function checkout() {
     const session = JSON.parse(localStorage.getItem('session') || '{}')
     const user = currentUser.value || {}
     const empresa = session.empresa || {}
-
     const payload = {
         id_usuario: user.id || 1,
         id_empresa: user.empresaId || 1,
         total: total.value,
-        detalles: cart.value.map(i => ({ id_producto: i.id_producto, cantidad: i.cantidad, precio_unitario: i.precio, nombre: i.nombre })),
+        detalles: cart.value.map(i => ({
+            id_producto: i.id_producto,
+            cantidad: i.cantidad,
+            precio_unitario: i.precio,
+            nombre: i.nombre
+        })),
         pagos: [{ id_pago: 1, monto: total.value }],
         usarImpresora: false
     }
 
     try {
-        // 1. Enviar al Backend (Este debe devolver { venta, folio, timbre, xml })
         const resp = await emitirVenta(payload)
         const data = resp?.data ?? resp
         if (!data) throw new Error("Sin respuesta del servidor")
 
         const folioReal = data.folio || data.venta?.id_venta || '---';
-        const timbreXml = data.timbre;
-        const xmlContent = data.xml;
+        const timbreXml = data.timbre; // PDF417
 
-        // 2. Descargar XML (Si existe)
-        if (xmlContent) {
-            try {
-                const blob = new Blob([xmlContent], { type: 'text/xml' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `DTE_Folio_${folioReal}.xml`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                console.log("XML Descargado");
-            } catch (xmlErr) {
-                console.error("Error descargando XML", xmlErr);
+        const printData = {
+            empresa: { 
+                razonSocial: empresa.nombre || 'Sin Nombre',
+                rut: empresa.rut || '22.222.222-2',
+                direccion: empresa.direccion || 'Temuco'
+            },
+            venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
+            detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
+            total: total.value
+        }
+
+        if (usarImpresora.value) {
+            const isElectron = !!window.electronAPI;
+
+            if (isElectron) {
+                const opts = {
+                    type: printerType.value,
+                    ip: printerInfo.value.ip,
+                    port: printerInfo.value.port,
+                    vid: selectedUsbDevice.value?.vid,
+                    pid: selectedUsbDevice.value?.pid,
+                    content417: timbreXml
+                }
+                await window.electronAPI.printFromData(printData, opts)
+
+            } else {
+                // WEB/QZ: generate ESC/POS bytes + print raw
+                const bytes = generarTicketEscPos(printData, timbreXml);
+                await printFromWebRaw(bytes);
             }
         }
 
-        // 3. Imprimir
-        if (usarImpresora.value && window.electronAPI?.printFromData) {
-            const printData = {
-                empresa: { 
-                    razonSocial: empresa.nombre || 'Sin Nombre', 
-                    rut: empresa.rut || '22.222.222-2', 
-                    direccion: empresa.direccion || 'Temuco',
-                },
-                venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
-                detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
-                total: total.value
-            }
-            
-            const opts = {
-                type: printerType.value,
-                ip: printerInfo.value.ip,
-                port: printerInfo.value.port,
-                vid: selectedUsbDevice.value?.vid,
-                pid: selectedUsbDevice.value?.pid,
-                content417: timbreXml // AQUÍ SE VA EL TIMBRE AL ELECTRON
-            }
-
-            const r = await window.electronAPI.printFromData(printData, opts)
-            if (!r.ok) alert('Venta OK, Error impresora: ' + r.error)
-        }
-
-        cart.value = []
-        // alert(`Venta Folio ${folioReal} procesada.`)
+        cart.value = [];
 
     } catch (e) {
         console.error(e)
@@ -283,6 +275,59 @@ async function checkout() {
         isLoading.value = false;
     }
 }
+
+async function printFromWeb(data) {
+    if (!window.qz) {
+        alert("QZ Tray no está instalado.");
+        return;
+    }
+
+    await qz.websocket.connect();
+
+    const config = qz.configs.create("POS-Printer");
+
+    const txt = `
+${data.empresa.razonSocial}
+RUT: ${data.empresa.rut}
+${data.empresa.direccion}
+
+Venta #${data.venta.id_venta}
+Fecha: ${data.venta.fecha}
+
+--------------------------
+${data.detalles.map(d => `${d.nombre} x${d.cantidad}  $${d.subtotal}`).join("\n")}
+--------------------------
+TOTAL: $${data.total}
+`;
+
+    await qz.print(config, [{ type: 'raw', format: 'plain', data: txt }]);
+
+    await qz.websocket.disconnect();
+}
+async function printFromWebRaw(bytes) {
+    if (!window.qz) {
+        alert("QZ Tray no está instalado.");
+        return;
+    }
+
+    await qz.websocket.connect();
+
+    const config = qz.configs.create("POS-Printer", {
+        encoding: "binary",
+        rasterize: false
+    });
+
+    await qz.print(config, [
+        {
+            type: 'raw',
+            format: 'binary',
+            data: bytes
+        }
+    ]);
+
+    await qz.websocket.disconnect();
+}
+
 
 async function handleScanEnter() {
     if(!scan.value) return
