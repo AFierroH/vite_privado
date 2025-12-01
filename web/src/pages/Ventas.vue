@@ -123,6 +123,10 @@ import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
 import { generarTicketEscPos } from "../utils/escposEncoder.js";
 import { printFromWebRaw } from "../utils/printWeb.js";
+
+// IMPORTAMOS QZ TRAY (Solo funcionará en web, Electron lo ignorará o no lo usará)
+import qz from 'qz-tray'; 
+
 const { currentUser } = useAuth()
 
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
@@ -132,16 +136,20 @@ const usarImpresora = ref(savedConfig.active !== undefined ? savedConfig.active 
 const usbDevices = ref([])
 const selectedUsbDevice = ref(null)
 const isLoading = ref(false)
+
+// DETECTAR ENTORNO
 const isElectron = !!window.electronAPI;
 
 // Guardar config automáticamente
 watch([printerType, printerInfo, usarImpresora, selectedUsbDevice], () => {
+  // En WEB, selectedUsbDevice es {name: "Printer"}, en ELECTRON es {name, vid, pid}
+  // Guardamos lo necesario para recuperar
   localStorage.setItem('printer_config', JSON.stringify({
       type: printerType.value,
       info: printerInfo.value,
       active: usarImpresora.value,
-      lastUsbVid: selectedUsbDevice.value?.vid,
-      lastUsbPid: selectedUsbDevice.value?.pid
+      // Guardamos el objeto completo para simplificar la recarga
+      lastUsbDevice: selectedUsbDevice.value 
   }))
 }, { deep: true })
 
@@ -152,35 +160,66 @@ const cart = ref([])
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
 
-// --- ELECTRON HELPERS ---
+// --- HELPERS UNIFICADOS (BÚSQUEDA) ---
 async function listUsbDevices() {
-    if (!window.electronAPI?.listUsbDevices) return
-    try {
-        const list = await window.electronAPI.listUsbDevices()
-        usbDevices.value = list
-        if (savedConfig.lastUsbVid && savedConfig.lastUsbPid) {
-            const found = list.find(d => d.vid === savedConfig.lastUsbVid && d.pid === savedConfig.lastUsbPid)
-            if (found) selectedUsbDevice.value = found
+    isLoading.value = true;
+    usbDevices.value = [];
+
+    // 1. MODO ELECTRON
+    if (isElectron) {
+        try {
+            const list = await window.electronAPI.listUsbDevices()
+            usbDevices.value = list
+            
+            // Recuperar selección previa (por VID/PID)
+            if (savedConfig.lastUsbDevice && savedConfig.lastUsbDevice.vid) {
+                const found = list.find(d => d.vid === savedConfig.lastUsbDevice.vid && d.pid === savedConfig.lastUsbDevice.pid)
+                if (found) selectedUsbDevice.value = found
+            }
+        } catch(e) { console.error("Error Electron USB:", e) }
+    
+    // 2. MODO WEB (QZ TRAY)
+    } else {
+        try {
+            // Conectar si no está activo
+            if (!qz.websocket.isActive()) {
+                await qz.websocket.connect();
+            }
+            // Buscar impresoras en el sistema (Windows Spooler)
+            const printers = await qz.printers.find();
+            
+            // Mapeamos a objetos para que el <select> no se rompa (espera .name)
+            usbDevices.value = printers.map(pName => ({ name: pName, isQZ: true }));
+
+            // Recuperar selección previa (por Nombre)
+            if (savedConfig.lastUsbDevice && savedConfig.lastUsbDevice.name) {
+                const found = usbDevices.value.find(d => d.name === savedConfig.lastUsbDevice.name)
+                if (found) selectedUsbDevice.value = found
+            }
+        } catch(e) {
+            console.error("Error QZ Tray:", e);
+            alert("Error QZ Tray: Asegúrate de tenerlo instalado y abierto.");
         }
-    } catch(e) { console.error(e) }
+    }
+    isLoading.value = false;
 }
 
 async function fillLocalIp() {
-    if(!window.electronAPI?.getLocalIp) return alert("Electron no disponible")
-    try {
-        const ip = await window.electronAPI.getLocalIp()
-        if(ip) {
-            // Sugerencia: Llenamos los primeros 3 octetos
-            // printerInfo.value.ip = ip // Pone la IP completa
-            // Opcional: poner solo la base para que el usuario complete el ultimo numero
-            const parts = ip.split('.')
-            if(parts.length === 4) {
-                 printerInfo.value.ip = `${parts[0]}.${parts[1]}.${parts[2]}.`
-            } else {
-                 printerInfo.value.ip = ip
+    if (isElectron) {
+        try {
+            const ip = await window.electronAPI.getLocalIp()
+            if(ip) {
+                const parts = ip.split('.')
+                if(parts.length === 4) {
+                     printerInfo.value.ip = `${parts[0]}.${parts[1]}.${parts[2]}.`
+                } else {
+                     printerInfo.value.ip = ip
+                }
             }
-        }
-    } catch(e) { alert("Error obteniendo IP: " + e) }
+        } catch(e) { alert("Error IP Electron: " + e) }
+    } else {
+        alert("En modo Web no podemos detectar tu IP local automáticamente.");
+    }
 }
 
 // --- LOGICA VENTA ---
@@ -223,7 +262,7 @@ async function checkout() {
             nombre: i.nombre
         })),
         pagos: [{ id_pago: 1, monto: total.value }],
-        usarImpresora: false
+        usarImpresora: false // Siempre false al backend, nosotros imprimimos
     }
 
     try {
@@ -232,8 +271,9 @@ async function checkout() {
         if (!data) throw new Error("Sin respuesta del servidor")
 
         const folioReal = data.folio || data.venta?.id_venta || '---';
-        const timbreXml = data.timbre; // PDF417
+        const timbreXml = data.timbre; 
 
+        // PREPARAR DATOS DE IMPRESIÓN (OBJETO)
         const printData = {
             empresa: { 
                 razonSocial: empresa.nombre || 'Sin Nombre',
@@ -245,9 +285,12 @@ async function checkout() {
             total: total.value
         }
 
+        // --- IMPRESIÓN ---
         if (usarImpresora.value) {
-            const isElectron = !!window.electronAPI;
-
+            
+            // =========================
+            // CASO 1: MODO ELECTRON
+            // =========================
             if (isElectron) {
                 const opts = {
                     type: printerType.value,
@@ -257,12 +300,38 @@ async function checkout() {
                     pid: selectedUsbDevice.value?.pid,
                     content417: timbreXml
                 }
-                await window.electronAPI.printFromData(printData, opts)
+                const r = await window.electronAPI.printFromData(printData, opts)
+                if (!r.ok) alert('Venta OK, Error impresora: ' + r.error)
 
+            // =========================
+            // CASO 2: MODO WEB (QZ TRAY)
+            // =========================
             } else {
-                // WEB/QZ: generate ESC/POS bytes + print raw
-                const bytes = generarTicketEscPos(printData, timbreXml);
-                await printFromWebRaw(bytes);
+                try {
+                    // Generar bytes ESC/POS (Necesitas importar tu función existente)
+                    const bytes = generarTicketEscPos(printData, timbreXml);
+                    
+                    // Conectar QZ
+                    if (!qz.websocket.isActive()) await qz.websocket.connect();
+
+                    // Configurar destino
+                    let config;
+                    if (printerType.value === 'lan') {
+                        config = qz.configs.create({ host: printerInfo.value.ip, port: printerInfo.value.port });
+                    } else {
+                        // USB por nombre
+                        if (!selectedUsbDevice.value?.name) throw new Error("Selecciona una impresora USB");
+                        config = qz.configs.create(selectedUsbDevice.value.name);
+                    }
+
+                    // Enviar
+                    await qz.print(config, bytes);
+                    console.log("Impresión Web enviada");
+
+                } catch (qzErr) {
+                    console.error("Error QZ:", qzErr);
+                    alert("Error imprimiendo (Web): " + qzErr);
+                }
             }
         }
 
@@ -276,35 +345,6 @@ async function checkout() {
     }
 }
 
-async function printFromWeb(data) {
-    if (!window.qz) {
-        alert("QZ Tray no está instalado.");
-        return;
-    }
-
-    await qz.websocket.connect();
-
-    const config = qz.configs.create("POS-Printer");
-
-    const txt = `
-${data.empresa.razonSocial}
-RUT: ${data.empresa.rut}
-${data.empresa.direccion}
-
-Venta #${data.venta.id_venta}
-Fecha: ${data.venta.fecha}
-
---------------------------
-${data.detalles.map(d => `${d.nombre} x${d.cantidad}  $${d.subtotal}`).join("\n")}
---------------------------
-TOTAL: $${data.total}
-`;
-
-    await qz.print(config, [{ type: 'raw', format: 'plain', data: txt }]);
-
-    await qz.websocket.disconnect();
-}
-
 async function handleScanEnter() {
     if(!scan.value) return
     try {
@@ -316,8 +356,8 @@ async function handleScanEnter() {
 }
 
 onMounted(() => {
-    search()
-    listUsbDevices()
+    // search() // Si quieres buscar productos al inicio
+    listUsbDevices() // Llama a la funcion unificada
 })
 </script>
 
