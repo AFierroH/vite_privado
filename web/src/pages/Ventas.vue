@@ -304,30 +304,6 @@ TOTAL: $${data.total}
 
     await qz.websocket.disconnect();
 }
-async function printFromWebRaw(bytes) {
-    if (!window.qz) {
-        alert("QZ Tray no está instalado.");
-        return;
-    }
-
-    await qz.websocket.connect();
-
-    const config = qz.configs.create("POS-Printer", {
-        encoding: "binary",
-        rasterize: false
-    });
-
-    await qz.print(config, [
-        {
-            type: 'raw',
-            format: 'binary',
-            data: bytes
-        }
-    ]);
-
-    await qz.websocket.disconnect();
-}
-
 
 async function handleScanEnter() {
     if(!scan.value) return
