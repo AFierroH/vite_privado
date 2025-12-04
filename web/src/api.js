@@ -58,8 +58,19 @@ export async function quitarStockApi(id, cantidad) {
   return r.data
 }
 
-export async function fetchProducts(q = '', empresaId = null) {
-  const params = { search: q };
+// src/api.js (o donde esté tu función)
+
+// 1. Agregamos 'page' y 'limit' en los argumentos (con valores por defecto)
+export async function fetchProducts(q = '', empresaId = null, page = 1, limit = 20) {
+  
+  const params = { 
+      search: q,
+      // 2. Agregamos estos dos parámetros para enviarlos al backend
+      page: page,
+      limit: limit
+  };
+
+  // --- TU LÓGICA ORIGINAL (INTACTA) ---
   if (!empresaId) {
       try {
           const session = JSON.parse(localStorage.getItem('session') || '{}');
@@ -72,10 +83,10 @@ export async function fetchProducts(q = '', empresaId = null) {
   } else {
       params.empresaId = empresaId;
   }
+  // ------------------------------------
 
   return api.get(`/productos`, { params });
 }
-
 /* ----------------------- USUARIOS --------------------- */
 export async function fetchUsers() {
   const r = await api.get('/usuarios')
