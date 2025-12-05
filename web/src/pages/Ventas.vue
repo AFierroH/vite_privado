@@ -121,43 +121,45 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import { fetchProducts, emitirVenta } from '../api' // Tu api.js corregido
+import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
-import { generarTicketEscPos } from "../utils/escposEncoder.js"
-import { generarPdf417Base64, extraerTedDelXml } from "../utils/pdf417Generator.js"
-import { PrinterService } from '../utils/PrinterService.js'
+import { generarTicketEscPos } from "../utils/escposEncoder.js"; // IMPORTANTE
+import { PrinterService } from '../utils/PrinterService.js';     // IMPORTANTE
 
 const { currentUser } = useAuth()
 
-// Configuración inicial
+// CONFIG
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
 const printerType = ref(savedConfig.type || 'usb')
 const printerInfo = ref(savedConfig.info || { ip: '', port: 9100 })
 const usarImpresora = ref(savedConfig.active !== undefined ? savedConfig.active : true)
 const usbDevices = ref([])
-const selectedUsbDevice = ref(savedConfig.lastUsbVal || null) // Guardamos el valor, no el objeto entero a veces
+const selectedUsbDevice = ref(savedConfig.lastUsbVal || null) // Guardamos el valor (VID/PID)
+const isLoading = ref(false)
 
-// Variables reactivas
-const scan = ref('')
+const isElectron = !!window.electronAPI;
+
+const scan = ref(''); const q = ref(''); const productos = ref([]); const cart = ref([]);
+const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0));
 const q = ref('')
 const productos = ref([])
 const cart = ref([])
 const isLoading = ref(false)
 const isElectron = !!window.electronAPI;
 
-// Guardar config al cambiar
+// WATCHER
 watch([printerType, printerInfo, usarImpresora, selectedUsbDevice], () => {
   localStorage.setItem('printer_config', JSON.stringify({
       type: printerType.value,
       info: printerInfo.value,
       active: usarImpresora.value,
-      lastUsbVal: selectedUsbDevice.value 
+      lastUsbVal: selectedUsbDevice.value // Guardamos el objeto VID/PID
   }))
 }, { deep: true })
 
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
+function clear() { cart.value = [] }
 
-// --- CARGAR PRODUCTOS (CORREGIDO PARA TU BACKEND) ---
 async function search() {
     isLoading.value = true
     
@@ -186,114 +188,83 @@ async function search() {
 // --- IMPRESORAS ---
 async function listUsbDevices() {
     isLoading.value = true;
-    usbDevices.value = await PrinterService.listarUSB();
-    isLoading.value = false;
+    try {
+        usbDevices.value = await PrinterService.listarUSB();
+        
+        // Recuperar seleccion si existe
+        if (savedConfig.lastUsbVal && usbDevices.value.length > 0) {
+            // Buscamos coincidencia por VID/PID
+            const saved = savedConfig.lastUsbVal;
+            const found = usbDevices.value.find(d => d.val.vid === saved.vid && d.val.pid === saved.pid);
+            if(found) selectedUsbDevice.value = found.val;
+        }
+        // Si es Web y solo hay uno (el hardcodeado), seleccionarlo por defecto
+        if (!isElectron && usbDevices.value.length === 1) {
+            selectedUsbDevice.value = usbDevices.value[0].val;
+        }
+    } catch(e) { console.error(e); }
+    finally { isLoading.value = false; }
 }
 
+// --- CHECKOUT ---
 async function checkout() {
-    if (cart.value.length === 0) return alert('Carrito vacío')
-    
+    if (cart.value.length === 0) return alert('Carrito vacío');
     isLoading.value = true;
-    const session = JSON.parse(localStorage.getItem('session') || '{}')
-    const user = currentUser.value || {}
-    const empresa = session.empresa || {}
 
-    // 1. PREPARAR PAYLOAD VENTA
+    // ... (Tu preparación de payload IGUAL) ...
+    const session = JSON.parse(localStorage.getItem('session') || '{}');
+    const user = currentUser.value || {};
+    const empresa = session.empresa || {};
     const payload = {
-        id_usuario: user.id || 1,
-        id_empresa: user.empresaId || empresa.id_empresa || 1,
-        total: total.value,
-        detalles: cart.value.map(i => ({
-            id_producto: i.id_producto,
-            cantidad: i.cantidad,
-            precio_unitario: i.precio,
-            nombre: i.nombre
-        })),
-        pagos: [{ id_pago: 1, monto: total.value }],
-        usarImpresora: false // Se maneja localmente
-    }
+        id_usuario: user.id || 1, id_empresa: user.empresaId || 1, total: total.value,
+        detalles: cart.value.map(i => ({ id_producto: i.id_producto, cantidad: i.cantidad, precio_unitario: i.precio, nombre: i.nombre })),
+        pagos: [{ id_pago: 1, monto: total.value }], usarImpresora: false
+    };
 
     try {
-        // 2. ENVIAR AL BACKEND
-        const resp = await emitirVenta(payload)
-        const data = resp.data || resp
-        if (!data) throw new Error("Sin respuesta del servidor")
+        const resp = await emitirVenta(payload);
+        const data = resp?.data ?? resp;
+        if (!data) throw new Error("Sin respuesta");
 
-        const folioReal = data.folio || data.venta?.id_venta || '---';
-        
-        // 3. EXTRAER Y GENERAR PDF417
-        let pdf417Image = null;
-        let tedXml = null;
-        
-        if (data.timbre || data.xmlCompleto) {
-            // Extraer el TED del XML completo
-            tedXml = extraerTedDelXml(data.timbre || data.xmlCompleto);
-            
-            if (tedXml) {
-                console.log('TED extraído, generando PDF417...');
-                pdf417Image = await generarPdf417Base64(tedXml);
-                
-                if (!pdf417Image) {
-                    console.warn('No se pudo generar PDF417');
-                }
-            } else {
-                console.warn('No se encontró TED en el XML');
-            }
-        }
+        const folioReal = data.folio || '---';
+        const timbreXml = data.timbre;
 
-        // 4. PREPARAR DATOS IMPRESIÓN
-        const printData = {
-            empresa: { 
-                razonSocial: empresa.nombre || 'EMPRESA DEMO',
-                rut: empresa.rut || '11.111.111-1',
-                direccion: empresa.direccion || 'Dirección Demo'
-            },
-            venta: { 
-                id_venta: folioReal, 
-                fecha: new Date().toLocaleString('es-CL')
-            },
-            detalles: payload.detalles.map(d => ({ 
-                ...d, 
-                subtotal: d.cantidad * d.precio_unitario 
-            })),
-            total: total.value
-        }
-
-        // 5. IMPRIMIR (SI ESTÁ ACTIVO)
         if (usarImpresora.value) {
-            try {
-                // Generar bytes ESC/POS del ticket (sin PDF417)
-                const ticketBytes = generarTicketEscPos(printData, null);
-                
-                // Llamar al servicio con la imagen ya generada
-                await PrinterService.imprimir({
-                    printerType: printerType.value,
-                    ip: printerInfo.value.ip,
-                    port: printerInfo.value.port,
-                    printerVal: selectedUsbDevice.value,
-                    dataObj: printData,
-                    rawBytes: ticketBytes,
-                    content417: tedXml, // Para Electron (XML completo)
-                    pdf417Base64: pdf417Image // Para QZ Tray (imagen ya generada)
-                });
-                
-                console.log('Impresión completada');
-            } catch (printErr) {
-                console.error('Error en impresión:', printErr);
-                alert(`Venta registrada pero falló impresión: ${printErr.message}`);
-            }
-        }
+            // Datos Objeto (Para Electron)
+            const printDataObj = {
+                empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
+                venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
+                detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
+                total: total.value
+            };
 
-        // 6. LIMPIAR CARRITO
+            // Datos Bytes (Para Web/QZ)
+            // Generamos los bytes SOLO si no es electron (para ahorrar proceso)
+            let rawBytes = null;
+            if (!isElectron) {
+                rawBytes = generarTicketEscPos(printDataObj, timbreXml);
+            }
+
+            // ENVIAR AL SERVICIO
+            await PrinterService.imprimir({
+                printerType: printerType.value,
+                printerVal: selectedUsbDevice.value, // Objeto {vid, pid}
+                ip: printerInfo.value.ip,
+                port: printerInfo.value.port,
+                dataObj: printDataObj,
+                rawBytes: rawBytes,
+                content417: timbreXml
+            });
+        }
+        
         cart.value = [];
-        alert(`Venta #${folioReal} registrada exitosamente`);
+        if(isElectron) alert('Venta OK');
 
     } catch (e) {
-        console.error('Error en checkout:', e)
-        alert('Error: ' + (e.message || e))
+        console.error(e);
+        alert('Error: ' + (e.message || e));
     } finally {
         isLoading.value = false;
-        search(); // Recargar stock
     }
 }
 
@@ -303,8 +274,6 @@ function addProduct(p) {
     else { cart.value.push({ ...p, cantidad: 1, subtotal: p.precio }) }
 }
 
-function clear() { cart.value = [] }
-const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0))
 
 async function handleScanEnter() {
     if(!scan.value) return
