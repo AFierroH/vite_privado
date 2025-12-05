@@ -141,9 +141,6 @@ const isElectron = !!window.electronAPI;
 
 const scan = ref(''); const q = ref(''); const productos = ref([]); const cart = ref([]);
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0));
-const q = ref('')
-const productos = ref([])
-const cart = ref([])
 const isLoading = ref(false)
 const isElectron = !!window.electronAPI;
 
