@@ -123,8 +123,9 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { fetchProducts, emitirVenta } from '../api' // Tu api.js corregido
 import { useAuth } from '../composables/useAuth.js'
-import { PrinterService } from '../utils/PrinterService.js' // El servicio corregido arriba
 import { generarTicketEscPos } from "../utils/escposEncoder.js"
+import { generarPdf417Base64, extraerTedDelXml } from "../utils/pdf417Generator.js"
+import { PrinterService } from '../utils/PrinterService.js'
 
 const { currentUser } = useAuth()
 
@@ -189,7 +190,6 @@ async function listUsbDevices() {
     isLoading.value = false;
 }
 
-// --- CHECKOUT ---
 async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío')
     
@@ -201,7 +201,7 @@ async function checkout() {
     // 1. PREPARAR PAYLOAD VENTA
     const payload = {
         id_usuario: user.id || 1,
-        id_empresa: user.empresaId || 1,
+        id_empresa: user.empresaId || empresa.id_empresa || 1,
         total: total.value,
         detalles: cart.value.map(i => ({
             id_producto: i.id_producto,
@@ -210,7 +210,7 @@ async function checkout() {
             nombre: i.nombre
         })),
         pagos: [{ id_pago: 1, monto: total.value }],
-        usarImpresora: false
+        usarImpresora: false // Se maneja localmente
     }
 
     try {
@@ -220,48 +220,80 @@ async function checkout() {
         if (!data) throw new Error("Sin respuesta del servidor")
 
         const folioReal = data.folio || data.venta?.id_venta || '---';
-        const timbreXml = data.timbre;
+        
+        // 3. EXTRAER Y GENERAR PDF417
+        let pdf417Image = null;
+        let tedXml = null;
+        
+        if (data.timbre || data.xmlCompleto) {
+            // Extraer el TED del XML completo
+            tedXml = extraerTedDelXml(data.timbre || data.xmlCompleto);
+            
+            if (tedXml) {
+                console.log('TED extraído, generando PDF417...');
+                pdf417Image = await generarPdf417Base64(tedXml);
+                
+                if (!pdf417Image) {
+                    console.warn('No se pudo generar PDF417');
+                }
+            } else {
+                console.warn('No se encontró TED en el XML');
+            }
+        }
 
-        // 3. PREPARAR DATOS IMPRESIÓN
+        // 4. PREPARAR DATOS IMPRESIÓN
         const printData = {
             empresa: { 
                 razonSocial: empresa.nombre || 'EMPRESA DEMO',
                 rut: empresa.rut || '11.111.111-1',
                 direccion: empresa.direccion || 'Dirección Demo'
             },
-            venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
-            detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
+            venta: { 
+                id_venta: folioReal, 
+                fecha: new Date().toLocaleString('es-CL')
+            },
+            detalles: payload.detalles.map(d => ({ 
+                ...d, 
+                subtotal: d.cantidad * d.precio_unitario 
+            })),
             total: total.value
         }
 
-        // 4. IMPRIMIR (SI ESTÁ ACTIVO)
+        // 5. IMPRIMIR (SI ESTÁ ACTIVO)
         if (usarImpresora.value) {
-            // Generar Bytes RAW
-            const bytes = generarTicketEscPos(printData, timbreXml);
-            
-            // Llamar al servicio corregido
-            await PrinterService.imprimir({
-                printerType: printerType.value,
-                ip: printerInfo.value.ip,
-                port: printerInfo.value.port,
+            try {
+                // Generar bytes ESC/POS del ticket (sin PDF417)
+                const ticketBytes = generarTicketEscPos(printData, null);
                 
-                printerVal: selectedUsbDevice.value, // Esto va a QZ (nombre) o Electron (objeto)
+                // Llamar al servicio con la imagen ya generada
+                await PrinterService.imprimir({
+                    printerType: printerType.value,
+                    ip: printerInfo.value.ip,
+                    port: printerInfo.value.port,
+                    printerVal: selectedUsbDevice.value,
+                    dataObj: printData,
+                    rawBytes: ticketBytes,
+                    content417: tedXml, // Para Electron (XML completo)
+                    pdf417Base64: pdf417Image // Para QZ Tray (imagen ya generada)
+                });
                 
-                dataObj: printData, // Para Electron (si usas la lógica antigua de HTML/Canvas)
-                rawBytes: bytes,    // Para QZ Tray (RAW)
-                content417: timbreXml
-            });
+                console.log('Impresión completada');
+            } catch (printErr) {
+                console.error('Error en impresión:', printErr);
+                alert(`Venta registrada pero falló impresión: ${printErr.message}`);
+            }
         }
 
+        // 6. LIMPIAR CARRITO
         cart.value = [];
-        // alert("Venta exitosa"); // Opcional
+        alert(`Venta #${folioReal} registrada exitosamente`);
 
     } catch (e) {
-        console.error(e)
+        console.error('Error en checkout:', e)
         alert('Error: ' + (e.message || e))
     } finally {
         isLoading.value = false;
-        search(); // Recargar stock visualmente
+        search(); // Recargar stock
     }
 }
 

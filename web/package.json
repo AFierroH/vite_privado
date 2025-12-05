@@ -12,6 +12,7 @@
   "dependencies": {
     "@tailwindcss/cli": "^4.1.13",
     "axios": "^1.12.2",
+    "bwip-js": "^4.8.0",
     "chart.js": "^4.5.0",
     "esc-pos-encoder": "^3.0.0",
     "qz-tray": "^2.2.5",
