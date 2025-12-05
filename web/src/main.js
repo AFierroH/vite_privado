@@ -2,7 +2,8 @@ import { createApp } from 'vue'
 import App from './App.vue'   
 import router from './router'
 import './style.css'
-
+import qz from 'qz-tray';
+window.qz = qz;
 const app = createApp(App)
 app.use(router)
 app.mount('#app')
