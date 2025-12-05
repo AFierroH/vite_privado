@@ -1,4 +1,4 @@
-import { ReceiptPrinterEncoder } from '@point-of-sale/receipt-printer-encoder';
+import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 
 /**
  * Genera comandos ESC/POS para ticket térmico
