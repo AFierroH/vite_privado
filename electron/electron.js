@@ -135,10 +135,10 @@ async function printTicket(sale, opts) {
                            .feed(1);
 
                     printer.align('lt')
-                           .text('------------------------------------------')
+                           .text('------------------------------------------------')
                            .text(`BOLETA N: ${sale.venta.id_venta}`)
                            .text(`FECHA:    ${sale.venta.fecha}`)
-                           .text('------------------------------------------');
+                           .text('------------------------------------------------');
 
                     sale.detalles.forEach(d => {
                         printer.tableCustom([
@@ -148,7 +148,7 @@ async function printTicket(sale, opts) {
                         ]);
                     });
 
-                    printer.text('------------------------------------------');
+                    printer.text('------------------------------------------------');
                     printer.align('rt').size(1,1).text(`TOTAL: ${formatCLP(sale.total)}`);
 
                     // TIMBRE
@@ -158,6 +158,7 @@ async function printTicket(sale, opts) {
                             if(img) {
                                 printer.align('ct');
                                 await printer.raster(img, 'normal');
+                                printer.size(0.5, 0.5).style('normal')
                                 printer.text('Timbre Electronico SII');
                             }
                         } catch(e) { console.error("Fallo Timbre:", e); }
