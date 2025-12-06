@@ -1,19 +1,54 @@
 import EscPosEncoder from 'esc-pos-encoder';
 import bwipjs from 'bwip-js';
 
-// Helper para formatear CLP
 const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 
 /**
- * Genera los bytes ESC/POS para el ticket, incluyendo el Timbre PDF417.
- * @param {Object} data - Datos de la venta (empresa, detalles, total)
- * @param {String} timbreStr - El string XML del <TED>...</TED>
- * @returns {Uint8Array} Bytes listos para QZ Tray
+ * Genera una imagen Base64 del PDF417 usando Canvas (Equivalente a tu generatePdf417 de Electron)
  */
-export async function generarTicketEscPos(data, timbreStr) {
+async function generatePdf417Web(dataStr) {
+    if (!dataStr) return null;
+    
+    // Crear un canvas invisible
+    const canvas = document.createElement('canvas');
+    
+    try {
+        // 1. Dibujar el código de barras en el canvas usando BWIP-JS
+        bwipjs.toCanvas(canvas, {
+            bcid: 'pdf417',       // Tipo
+            text: dataStr.trim(), // Datos (XML del Timbre)
+            scale: 2,             // Escala
+            height: 10,           // Altura barras
+            includetext: false,
+            eclevel: 5,           // Nivel de error
+            padding: 0
+        });
+
+        // 2. Procesamiento de Imagen (Imitando a JIMP de Electron)
+        // Convertimos a Imagen para poder manipularla o pasarla al encoder
+        const img = new Image();
+        img.src = canvas.toDataURL('image/png');
+        await new Promise(r => img.onload = r);
+
+        // Opcional: Si necesitaras redimensionar o convertir a B/N estricto, 
+        // podrías dibujar esta imagen en otro canvas con filtros. 
+        // Por ahora, bwipjs genera B/N puro, así que suele funcionar bien directo.
+        
+        return img; // Retornamos el objeto Image listo para el Encoder
+
+    } catch (e) {
+        console.error("Error generando PDF417 Web:", e);
+        return null;
+    }
+}
+
+/**
+ * Genera los bytes ESC/POS finales para QZ Tray
+ */
+export async function generarTicketEscPos(data, timbreXml) {
     const encoder = new EscPosEncoder();
 
-    // 1. ENCABEZADO
+    // --- ENCABEZADO ---
     encoder.initialize()
            .align('center')
            .bold(true)
@@ -27,7 +62,7 @@ export async function generarTicketEscPos(data, timbreStr) {
            .newline()
            .newline();
 
-    // 2. DATOS VENTA
+    // --- DATOS VENTA ---
     encoder.align('left')
            .text('--------------------------------')
            .newline()
@@ -38,21 +73,21 @@ export async function generarTicketEscPos(data, timbreStr) {
            .text('--------------------------------')
            .newline();
 
-    // 3. DETALLES (Tabla manual)
-    // EscPosEncoder no tiene tablas complejas, alineamos a mano o simple
+    // --- DETALLES ---
     data.detalles.forEach(d => {
+        // Simulando tabla simple
         const nombre = (d.nombre || '').substring(0, 20);
         encoder.text(`${d.cantidad} ${nombre}`)
                .align('right')
                .text(formatCLP(d.subtotal))
-               .align('left')
+               .align('left') // Volver a izquierda
                .newline();
     });
 
     encoder.text('--------------------------------')
            .newline();
 
-    // 4. TOTALES
+    // --- TOTALES ---
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
@@ -69,50 +104,31 @@ export async function generarTicketEscPos(data, timbreStr) {
            .newline()
            .newline();
 
-    // 5. GENERAR TIMBRE PDF417 (WEB)
-    if (timbreStr) {
+    // --- TIMBRE ELECTRONICO (WEB) ---
+    if (timbreXml) {
         try {
-            // Creamos un canvas en memoria
-            const canvas = document.createElement('canvas');
+            console.log("Generando imagen PDF417 para Web...");
+            const imgObj = await generatePdf417Web(timbreXml);
             
-            // Usamos BWIP-JS para dibujar el PDF417 en el canvas
-            // OJO: Usamos bwipjs.toCanvas (versión navegador)
-            bwipjs.toCanvas(canvas, {
-                bcid: 'pdf417',       // Tipo de código
-                text: timbreStr,      // El XML del TED
-                scale: 2,             // Escala (2 es un buen equilibrio para 80mm)
-                height: 10,           // Altura de las barras (factor)
-                includetext: false,   // No imprimir el texto del XML abajo
-                eclevel: 5            // Nivel de corrección de errores (SII pide 5 habitualmente)
-            });
-
-            // Convertimos el canvas a una Imagen para el Encoder
-            const img = new Image();
-            img.src = canvas.toDataURL('image/png');
-            
-            // Esperamos a que la imagen "cargue" en memoria
-            await new Promise(r => img.onload = r);
-
-            // Insertamos la imagen en el ticket
-            // .image(elemento, ancho, alto, algoritmo)
-            // 'atkinson' es bueno para difuminado monocromático
-            encoder.align('center')
-                   .image(img, 384, 120, 'atkinson') 
-                   .newline()
-                   .size('small')
-                   .text('Timbre Electronico SII')
-                   .newline()
-                   .text('Verifique en www.sii.cl')
-                   .newline();
-
+            if (imgObj) {
+                encoder.align('center')
+                       // .image(elemento, ancho, alto, algoritmo)
+                       // 384 es el ancho estándar útil para 58/80mm centrado
+                       .image(imgObj, 384, 120, 'atkinson') 
+                       .newline()
+                       .size('small')
+                       .text('Timbre Electronico SII')
+                       .newline()
+                       .text('Verifique en www.sii.cl')
+                       .newline();
+            }
         } catch (e) {
-            console.error("Error generando PDF417 Web:", e);
-            encoder.text('(Error Timbre Web)').newline();
+            console.error("Fallo al insertar imagen en ticket web:", e);
+            encoder.text('(Error Visualizando Timbre)').newline();
         }
     }
 
-    // 6. CORTAR
     encoder.cut();
 
-    return encoder.encode();
+    return encoder.encode(); // Retorna Uint8Array
 }
