@@ -191,6 +191,7 @@ async function checkout() {
         const timbreXml = data.timbre;
 
         if (usarImpresora.value) {
+            // Datos Objeto (Para Electron)
             const printDataObj = {
                 empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
                 venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
@@ -198,11 +199,15 @@ async function checkout() {
                 total: total.value
             };
 
+            // Datos Bytes (Para Web/QZ)
             let rawBytes = null;
             if (!isElectron) {
-                rawBytes = generarTicketEscPos(printDataObj, timbreXml);
+                // AHORA USAMOS AWAIT AQUÍ
+                console.log("Generando ticket Web con Timbre...");
+                rawBytes = await generarTicketEscPos(printDataObj, timbreXml);
             }
 
+            // ENVIAR
             await PrinterService.imprimir({
                 printerType: printerType.value,
                 printerVal: selectedUsbDevice.value,
