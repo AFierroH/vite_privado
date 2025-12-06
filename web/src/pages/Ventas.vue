@@ -1,6 +1,6 @@
 <template>
   <div class="p-4 h-full flex flex-col bg-[var(--bg-deep)] text-[var(--text-primary)] transition-colors">
-    <!-- ... (TEMPLATE SIN CAMBIOS VISUALES) ... -->
+    
     <div class="mb-4 flex flex-wrap items-center gap-4 bg-[var(--panel)] p-3 rounded border border-[var(--border)] shadow-sm">
       <div class="flex items-center gap-2">
         <label class="font-bold text-sm text-[var(--text-secondary)]">Impresora</label>
@@ -31,7 +31,7 @@
       </div>
     </div>
 
-    <!-- ... (RESTO DEL TEMPLATE EXACTAMENTE IGUAL) ... -->
+    <!-- ... (RESTO DEL TEMPLATE SIN CAMBIOS) ... -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden pb-1">
       <div class="lg:col-span-2 flex flex-col overflow-hidden">
          <div class="p-4 bg-[var(--panel)] rounded mb-4 flex gap-2 border border-[var(--border)] shadow-sm">
@@ -52,7 +52,8 @@
       <div class="bg-[var(--panel)] rounded flex flex-col h-full border border-[var(--border)] shadow-sm overflow-hidden">
          <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)]"><h3 class="font-bold text-lg">Ticket</h3></div>
          <div class="flex-1 overflow-y-auto p-2 custom-scroll">
-             <div v-for="(it,i) in cart" :key="i" class="flex justify-between items-center p-2 mb-1 bg-[var(--bg-deep)] rounded border">
+             <div v-if="cart.length === 0" class="h-full flex flex-col items-center justify-center text-[var(--text-secondary)] italic opacity-50">Vacío</div>
+             <div v-else v-for="(it,i) in cart" :key="i" class="flex justify-between items-center p-2 mb-1 bg-[var(--bg-deep)] rounded border">
                  <div class="flex-1 pr-2">
                      <div class="text-sm font-medium">{{ it.nombre }}</div>
                      <div class="text-xs text-[var(--text-secondary)]">{{ formatPrice(it.precio) }} x <input type="number" v-model.number="it.cantidad" class="w-10 bg-[var(--input-bg)] text-center rounded"></div>
@@ -81,7 +82,6 @@ import { PrinterService } from '../utils/PrinterService.js';
 
 const { currentUser } = useAuth()
 
-// CONFIG
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
 const printerType = ref(savedConfig.type || 'usb')
 const printerInfo = ref(savedConfig.info || { ip: '', port: 9100 })
@@ -92,14 +92,13 @@ const isLoading = ref(false)
 
 const isElectron = !!window.electronAPI;
 
-// WATCHER (Ojo: Para WebUSB no podemos guardar el objeto 'device' en localStorage porque es complejo.
-// Guardamos solo flag o intentamos reconectar al inicio)
+// WATCHER
 watch([printerType, printerInfo, usarImpresora], () => {
   localStorage.setItem('printer_config', JSON.stringify({
       type: printerType.value,
       info: printerInfo.value,
       active: usarImpresora.value,
-      // No guardamos lastUsbVal complejo aquí para evitar errores de serialización en WebUSB
+      // No guardamos device complejo
   }))
 }, { deep: true })
 
@@ -114,9 +113,7 @@ async function listUsbDevices() {
     try {
         usbDevices.value = await PrinterService.listarUSB();
         
-        // Si hay una impresora "Click para conectar" (WebUSB), la pre-seleccionamos
         if (!isElectron && usbDevices.value.length > 0 && !selectedUsbDevice.value) {
-             // Si ya tenemos permiso, seleccionamos el primero
              if (usbDevices.value[0].val !== "NEW_WEBUSB") {
                  selectedUsbDevice.value = usbDevices.value[0].val;
              }
@@ -125,17 +122,14 @@ async function listUsbDevices() {
     finally { isLoading.value = false; }
 }
 
-// --- MANEJAR SELECCIÓN USB (Especial para WebUSB) ---
 async function handleUsbSelect() {
     if (!isElectron && selectedUsbDevice.value === "NEW_WEBUSB") {
-        // El usuario seleccionó "Click para conectar"
         const result = await PrinterService.requestWebUsb();
         if (result) {
-            // Actualizamos la lista con el dispositivo ya autorizado
             usbDevices.value = [result];
             selectedUsbDevice.value = result.val;
         } else {
-            selectedUsbDevice.value = null; // Cancelado
+            selectedUsbDevice.value = null; 
         }
     }
 }
@@ -149,7 +143,6 @@ async function fillLocalIp() {
     }
 }
 
-// ... (search, addProduct, handleScanEnter IGUALES) ...
 async function search() {
     isLoading.value = true;
     const session = JSON.parse(localStorage.getItem('session') || '{}');
@@ -198,7 +191,6 @@ async function checkout() {
         const timbreXml = data.timbre;
 
         if (usarImpresora.value) {
-            // Datos Objeto (Para Electron)
             const printDataObj = {
                 empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
                 venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
@@ -206,13 +198,11 @@ async function checkout() {
                 total: total.value
             };
 
-            // Datos Bytes (Para Web)
             let rawBytes = null;
             if (!isElectron) {
                 rawBytes = generarTicketEscPos(printDataObj, timbreXml);
             }
 
-            // ENVIAR
             await PrinterService.imprimir({
                 printerType: printerType.value,
                 printerVal: selectedUsbDevice.value,

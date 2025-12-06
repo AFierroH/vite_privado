@@ -1,46 +1,44 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 import path from 'path';
 import fs from 'fs';
 import bwipjs from 'bwip-js';
 import os from 'os';
-import net from 'net';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const escpos = require('escpos');
-// IMPORTANTE: ESTO REQUIERE DRIVER ZADIG (libusbK)
-escpos.USB = require('escpos-usb'); 
+// Asegúrate de que escpos-usb esté instalado: npm install escpos-usb
+escpos.USB = require('escpos-usb');
 escpos.Network = require('escpos-network');
 const Jimp = require('jimp');
 
-// -------------------- HELPERS --------------------
+// Helpers
 function formatCLP(num) { return '$ ' + new Intl.NumberFormat('es-CL').format(num); }
 
 ipcMain.handle('getLocalIp', async () => {
     const nets = os.networkInterfaces();
-    let localIp = null;
+    let localIp = '127.0.0.1';
     for (const name of Object.keys(nets)) {
-        for (const netInterface of nets[name]) {
-            if (netInterface.family === 'IPv4' && !netInterface.internal) {
-                localIp = netInterface.address;
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) {
+                localIp = net.address;
                 break;
             }
         }
-        if (localIp) break;
     }
-    return localIp || '127.0.0.1';
+    return localIp;
 });
 
-// LISTAR USB (Nativo Node/Zadig)
+// Listar USB (Nativo Node con escpos-usb)
 ipcMain.handle("listUsbDevices", async () => {
     try {
         const devices = escpos.USB.findPrinter();
         return devices.map(d => ({
-            name: `USB Printer (VID:${d.deviceDescriptor.idVendor.toString(16)} PID:${d.deviceDescriptor.idProduct.toString(16)})`,
+            name: `USB Printer (VID:${d.deviceDescriptor.idVendor.toString(16).toUpperCase()} PID:${d.deviceDescriptor.idProduct.toString(16).toUpperCase()})`,
             vid: d.deviceDescriptor.idVendor,
             pid: d.deviceDescriptor.idProduct
         }));
@@ -50,36 +48,18 @@ ipcMain.handle("listUsbDevices", async () => {
     }
 });
 
-// GENERAR PDF417 (Para Timbre SII)
+// Generar PDF417
 async function generatePdf417(data) {
     if (!data) return null;
     return new Promise((resolve) => {
-        const options = { 
-            bcid: 'pdf417', 
-            text: data.trim(), 
-            eclevel: 5, 
-            rowheight: 10, 
-            scale: 4, 
-            includetext: false, 
-            padding: 0 
-        };
-        
+        const options = { bcid: 'pdf417', text: data.trim(), eclevel: 5, rowheight: 10, scale: 4, includetext: false, padding: 0 };
         bwipjs.toBuffer(options, function (err, pngBuffer) {
-            if (err) {
-                console.error("Error BWIP:", err);
-                return resolve(null);
-            }
+            if (err) return resolve(null);
             Jimp.read(pngBuffer).then(image => {
-                const q = 40; // Margen blanco
+                const q = 40;
                 new Jimp(image.bitmap.width + q*2, image.bitmap.height + q*2, 0xFFFFFFFF, (e, bg) => {
                     if(e) return resolve(null);
-                    // Redimensionar para 80mm
-                    bg.composite(image, q, q)
-                      .resize(480, Jimp.AUTO)
-                      .greyscale()
-                      .contrast(1)
-                      .posterize(2);
-                      
+                    bg.composite(image, q, q).resize(480, Jimp.AUTO).greyscale().contrast(1).posterize(2);
                     const tPath = path.join(app.getPath('temp'), `p417_${Date.now()}.png`);
                     bg.writeAsync(tPath).then(() => {
                         escpos.Image.load(tPath, img => {
@@ -88,31 +68,25 @@ async function generatePdf417(data) {
                         });
                     });
                 });
-            }).catch(e => {
-                console.error("Error JIMP:", e);
-                resolve(null);
-            });
+            }).catch(() => resolve(null));
         });
     });
 }
 
-// IMPRIMIR TICKET
+// Imprimir Ticket
 async function printTicket(sale, opts) {
-    console.log("[PRINT] Iniciando impresión Electron...");
+    console.log("[PRINT] Iniciando (Electron Native)...");
     return new Promise(async (resolve, reject) => {
         let device, printer;
-        
         try {
-            // A. RED
             if (opts.type === 'lan' && opts.ip) {
                 device = new escpos.Network(opts.ip, opts.port || 9100);
             } 
-            // B. USB (Zadig)
             else if (opts.type === 'usb') {
                 if (opts.vid && opts.pid) {
                     device = new escpos.USB(opts.vid, opts.pid);
                 } else {
-                    device = new escpos.USB(); // Auto-detect
+                    device = new escpos.USB(); 
                 }
             } else {
                 return reject("Faltan datos de conexión");
@@ -125,7 +99,6 @@ async function printTicket(sale, opts) {
                 if (err) return reject("Error abriendo impresora: " + err);
                 
                 try {
-                    // --- DISEÑO ---
                     printer.align('ct')
                            .font('a').style('b').size(1, 1)
                            .text(sale.empresa.razonSocial || 'EMPRESA')
@@ -135,10 +108,10 @@ async function printTicket(sale, opts) {
                            .feed(1);
 
                     printer.align('lt')
-                           .text('------------------------------------------------')
+                           .text('------------------------------------------')
                            .text(`BOLETA N: ${sale.venta.id_venta}`)
                            .text(`FECHA:    ${sale.venta.fecha}`)
-                           .text('------------------------------------------------');
+                           .text('------------------------------------------');
 
                     sale.detalles.forEach(d => {
                         printer.tableCustom([
@@ -148,26 +121,23 @@ async function printTicket(sale, opts) {
                         ]);
                     });
 
-                    printer.text('------------------------------------------------');
+                    printer.text('------------------------------------------');
                     printer.align('rt').size(1,1).text(`TOTAL: ${formatCLP(sale.total)}`);
 
-                    // TIMBRE
                     if (opts.content417) {
                         try {
                             const img = await generatePdf417(opts.content417);
                             if(img) {
                                 printer.align('ct');
                                 await printer.raster(img, 'normal');
-                                printer.size(0.5, 0.5).style('normal')
                                 printer.text('Timbre Electronico SII');
                             }
-                        } catch(e) { console.error("Fallo Timbre:", e); }
+                        } catch(e){}
                     }
 
                     printer.feed(3);
                     printer.cut();
                     
-                    // Cierre seguro
                     setTimeout(() => {
                         try { printer.close(); } catch(e){}
                         resolve({ ok: true });
@@ -195,8 +165,8 @@ function createWindow() {
       icon: path.join(__dirname, 'build/icon.ico'), 
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false }
     });
-    const isDev = !app.isPackaged; 
+    const isDev = !app.isPackaged;
     if (isDev) mainWindow.loadURL('http://localhost:5173');
-    else mainWindow.loadURL('https://miposra.site'); 
+    else mainWindow.loadURL('https://miposra.site');
 }
 app.whenReady().then(createWindow);

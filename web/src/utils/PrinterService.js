@@ -3,11 +3,11 @@ import { sha256 } from 'js-sha256';
 
 const isElectron = !!window.electronAPI;
 
-// TUS IDS (Para WebUSB)
+// TUS IDS FIJOS (Para WebUSB)
 const MY_VID = 0x1FC9; 
 const MY_PID = 0x2016;
 
-// --- CONFIG QZ (SOLO PARA LAN) ---
+// Config QZ (Solo para LAN)
 qz.api.setSha256Type(data => sha256(data));
 qz.api.setPromiseType(resolver => new Promise(resolver));
 qz.security.setCertificatePromise((resolve) => resolve("-----BEGIN CERTIFICATE-----\n" +
@@ -26,21 +26,19 @@ qz.security.setCertificatePromise((resolve) => resolve("-----BEGIN CERTIFICATE--
             "-----END CERTIFICATE-----"));
 qz.security.setSignaturePromise(() => (resolve) => resolve());
 
-
 export const PrinterService = {
     
-    // --- 1. LISTAR IMPRESORAS ---
+    // 1. LISTAR
     async listarUSB() {
         if (isElectron) {
-            // MODO ELECTRON (Zadig Nativo)
+            // ELECTRON
             try {
                 const list = await window.electronAPI.listUsbDevices();
                 return list.map(d => ({ name: d.name, val: { vid: d.vid, pid: d.pid }, type: 'ELECTRON' }));
             } catch (e) { return []; }
         } else {
-            // MODO WEB (WebUSB)
-            // WebUSB requiere que el usuario haga click para dar permiso la primera vez.
-            // Aquí solo listamos los que ya tienen permiso.
+            // WEB (WebUSB)
+            // Solo listamos si ya tenemos permiso
             try {
                 const devices = await navigator.usb.getDevices();
                 const myPrinters = devices.filter(d => d.vendorId === MY_VID && d.productId === MY_PID);
@@ -48,12 +46,11 @@ export const PrinterService = {
                 if (myPrinters.length > 0) {
                     return myPrinters.map((d, i) => ({ 
                         name: `XPrinter WebUSB #${i+1}`, 
-                        val: d, // Guardamos el objeto Device nativo
+                        val: d, // Objeto Device nativo
                         type: 'WEBUSB' 
                     }));
                 } else {
-                    // Si no hay permisos aún, devolvemos una opción "Conectar Nuevo"
-                    return [{ name: "🔌 Click para Conectar XPrinter", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
+                    return [{ name: "🔌 Click para Conectar (WebUSB)", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
                 }
             } catch (e) {
                 console.error("WebUSB no soportado:", e);
@@ -62,23 +59,19 @@ export const PrinterService = {
         }
     },
 
-    // --- 2. SOLICITAR PERMISO WEBUSB (NUEVO) ---
+    // 2. SOLICITAR PERMISO WEBUSB
     async requestWebUsb() {
         try {
-            // Esto abre un popup nativo de Chrome
             const device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
             return { name: "XPrinter Conectada", val: device, type: 'WEBUSB' };
         } catch (e) {
-            console.error("Usuario canceló:", e);
             return null;
         }
     },
 
-    // --- 3. IMPRIMIR ---
+    // 3. IMPRIMIR
     async imprimir(params) {
-        // params: { printerType, printerVal, ip, port, dataObj, rawBytes }
-
-        // A. MODO ELECTRON
+        // ELECTRON
         if (isElectron) {
             const opts = {
                 type: params.printerType,
@@ -91,7 +84,7 @@ export const PrinterService = {
             return await window.electronAPI.printFromData(params.dataObj, opts);
         }
 
-        // B. MODO WEB LAN (Usa QZ Tray porque WebUSB no hace red)
+        // WEB LAN (QZ Tray)
         if (params.printerType === 'lan') {
             if (!qz.websocket.isActive()) await qz.websocket.connect();
             const config = qz.configs.create({ host: params.ip, port: params.port });
@@ -100,33 +93,30 @@ export const PrinterService = {
             return await qz.print(config, data);
         }
 
-        // C. MODO WEB USB (Usa WebUSB Nativo - Sin QZ Tray)
+        // WEB USB (WebUSB Nativo)
         if (params.printerType === 'usb') {
             let device = params.printerVal;
 
-            // Si es el valor placeholder, pedimos permiso
             if (device === "NEW_WEBUSB" || !device.open) {
                 device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
             }
 
-            if (!device) throw new Error("No se seleccionó dispositivo USB.");
+            if (!device) throw new Error("No se seleccionó dispositivo.");
 
-            // PROCESO DE ENVÍO WEBUSB
             try {
                 await device.open();
                 await device.selectConfiguration(1);
                 await device.claimInterface(0);
 
                 const uint8Data = new Uint8Array(params.rawBytes);
-                // Endpoint 3 (OUT) es el que descubrimos ayer
+                // Endpoint 3 (OUT)
                 await device.transferOut(3, uint8Data); 
 
-                // Opcional: Cerrar o dejar abierto
-                // await device.close(); 
+                // await device.close(); // Opcional, mejor dejar abierto si imprimes seguido
                 return { ok: true };
             } catch (err) {
                 console.error("Error WebUSB:", err);
-                throw new Error("Fallo WebUSB (Asegúrate de tener driver Zadig/WinUSB): " + err.message);
+                throw new Error("Fallo WebUSB. ¿Driver WinUSB instalado? " + err.message);
             }
         }
     }
