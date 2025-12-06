@@ -272,7 +272,7 @@ async function checkout() {
                 const rawBytes = generarTicketEscPos(printDataObj, timbreXml);
                 
                 // Usamos el servicio nuevo que hicimos para Web
-                await PrinterService.imprimirWeb({
+                await PrinterService.imprimir({
                     printerType: printerType.value,
                     printerVal: selectedUsbDevice.value, // Objeto {vid, pid}
                     ip: printerInfo.value.ip,

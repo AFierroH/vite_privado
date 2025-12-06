@@ -7,7 +7,7 @@ const isElectron = !!window.electronAPI;
 const MY_VID = 0x1FC9; 
 const MY_PID = 0x2016;
 
-// --- CONFIGURACIÓN DE SEGURIDAD QZ ---
+// --- SEGURIDAD QZ (Evita errores de certificado) ---
 qz.api.setSha256Type(function(data) { return sha256(data); });
 qz.api.setPromiseType(function(resolver) { return new Promise(resolver); });
 
@@ -37,38 +37,34 @@ export const PrinterService = {
     // 1. LISTAR IMPRESORAS
     async listarUSB() {
         if (isElectron) {
-            // MODO ELECTRON (Zadig)
+            // MODO ELECTRON (Zadig Nativo)
             try {
                 const devices = await window.electronAPI.listUsbDevices();
                 return devices.map(d => ({ 
                     name: d.name, 
-                    val: { vid: d.vid, pid: d.pid }, // Objeto VID/PID
+                    val: { vid: d.vid, pid: d.pid }, 
                     type: 'ELECTRON' 
                 }));
             } catch (e) { console.error(e); return []; }
         } else {
-            // MODO WEB (QZ Tray)
-            try {
-                if (!qz.websocket.isActive()) await qz.websocket.connect();
-                
-                // Intenta listar todo lo que QZ ve
-                const printers = await qz.printers.find();
-                return printers.map(pName => ({ 
-                    name: pName, 
-                    val: pName, // String nombre
-                    type: 'QZ' 
-                }));
-            } catch (e) {
-                // Si falla listar, devolvemos la genérica
-                return [{ name: "Impresora Web (Manual)", val: "XP-80C", type: 'QZ' }];
-            }
+            // MODO WEB (QZ RAW)
+            // Retornamos la impresora hardcodeada para Zadig Web
+            return [{
+                name: "XPrinter (Web Zadig)",
+                val: { vid: MY_VID, pid: MY_PID }, 
+                type: 'QZ_RAW'
+            }];
         }
     },
 
-    // 2. IMPRIMIR
+    // 2. IMPRIMIR (FUNCIÓN UNIFICADA)
     async imprimir(params) {
+        // params: { printerType, printerVal (obj vid/pid), ip, port, dataObj, rawBytes }
+
         if (isElectron) {
-            // ELECTRON (Zadig Nativo)
+            // =========================
+            // MODO ELECTRON (Nativo)
+            // =========================
             const opts = {
                 type: params.printerType,
                 ip: params.ip,
@@ -80,36 +76,41 @@ export const PrinterService = {
             return await window.electronAPI.printFromData(params.dataObj, opts);
 
         } else {
-            // WEB (QZ Tray)
+            // =========================
+            // MODO WEB (QZ Tray)
+            // =========================
             if (!qz.websocket.isActive()) await qz.websocket.connect();
 
-            let config;
+            // A. LAN
             if (params.printerType === 'lan') {
-                config = qz.configs.create({ host: params.ip, port: params.port });
-            } else {
-                // USB
-                const printerName = params.printerVal?.name || params.printerVal || "XP-80C"; // Nombre de la impresora en Windows
-                
-                // --- AQUÍ ESTÁ EL TRUCO (FORCE RAW) ---
-                // Le decimos a QZ: "Usa este nombre, pero ignora el driver y manda Raw".
-                // Esto suele funcionar incluso si el driver está corrupto o es genérico.
-                config = qz.configs.create(printerName, { 
-                    forceRaw: true,      // Para QZ 2.2+
-                    altPrinting: true,   // Fallback para versiones viejas
-                    encoding: 'CP858'    // Asegura codificación correcta
-                });
-            }
-
-            // ENVOLVER BYTES (Evita imprimir números)
-            const uint8Data = new Uint8Array(params.rawBytes);
-            const data = [{ 
-                type: 'raw', 
-                format: 'command', 
-                flavor: 'plain', 
-                data: uint8Data 
-            }];
+                const config = qz.configs.create({ host: params.ip, port: params.port });
+                // Envolver bytes
+                const uint8Data = new Uint8Array(params.rawBytes);
+                const data = [{ type: 'raw', format: 'command', flavor: 'plain', data: uint8Data }];
+                return await qz.print(config, data);
+            } 
             
-            return await qz.print(config, data);
+            // B. USB RAW (ZADIG)
+            else {
+                const config = qz.configs.create({
+                    vendor: params.printerVal?.vid || MY_VID,
+                    product: params.printerVal?.pid || MY_PID,
+                    index: 0,
+                    endpoint: 0x03 // Endpoint OUT
+                });
+
+                const uint8Data = new Uint8Array(params.rawBytes);
+
+                try {
+                    await qz.usb.claim(config); 
+                    await qz.usb.sendData(config, uint8Data);
+                    await qz.usb.release(config);
+                    return true;
+                } catch (err) {
+                    console.error("QZ USB Error:", err);
+                    throw new Error("Fallo USB Web: " + err.message);
+                }
+            }
         }
     }
 };
