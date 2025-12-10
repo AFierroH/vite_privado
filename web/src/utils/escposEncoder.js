@@ -3,93 +3,97 @@ import bwipjs from 'bwip-js';
 
 const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 
+// --- SECUENCIA DE RESETEO NUCLEAR ---
+// Inyectamos esto antes de cada bloque de texto importante
+const CMD_RESET_TOTAL = [
+    0x1B, 0x40,       // ESC @    -> Inicializar impresora (Borra configuraciones raras)
+    0x12,             // DC2      -> Cancelar modo CONDENSADO (Importante si se ve "apretado")
+    0x1B, 0x4D, 0x00, // ESC M 0  -> Forzar FUENTE A (La grande/normal de 12x24)
+    0x1B, 0x21, 0x00, // ESC ! 0  -> Resetear modos de impresión (Quita negrita, doble alto/ancho)
+    0x1B, 0x32        // ESC 2    -> Espaciado de línea por defecto (1/6 pulgada)
+];
+
 /**
- * Genera el PDF417 optimizado para evitar cortes en la impresora.
- * Usamos un canvas más pequeño y binarización simple.
+ * Generador de PDF417 optimizado (Binarizado para no cortar el papel)
  */
 async function generatePdf417Web(dataStr) {
     if (!dataStr) return null;
-    
-    // Crear canvas off-screen
     const canvas = document.createElement('canvas');
-    
     try {
-        // 1. Generar código de barras
         bwipjs.toCanvas(canvas, {
             bcid: 'pdf417',
             text: dataStr.trim(),
-            scale: 2,           // Escala suficiente para lectura
-            height: 10,         // Altura de barras
+            scale: 2,
+            height: 10,
             includetext: false,
             eclevel: 5,
             padding: 0
         });
-
-        // 2. Convertir a Imagen y esperar carga
         const img = new Image();
         img.src = canvas.toDataURL('image/png');
         await new Promise(r => img.onload = r);
-
         return img;
-
     } catch (e) {
-        console.error("Error generando PDF417 Web:", e);
+        console.error("Error PDF417:", e);
         return null;
     }
 }
 
 /**
- * Genera los bytes ESC/POS exactos
+ * Generador de Ticket ESC/POS
  */
 export async function generarTicketEscPos(data, timbreXml) {
-    // Instanciar Encoder
     const encoder = new EscPosEncoder();
-
-    // CONFIGURACIÓN DE ANCHO (Crucial para que no se vea "comprimido")
-    // 48 caracteres es el ancho estándar para papel de 80mm en Fuente A
+    
+    // Ancho para Fuente A en 80mm = 48 caracteres
     const LINE_WIDTH = 48;
     const SEPARATOR = '-'.repeat(LINE_WIDTH);
 
-    // --- 1. INICIALIZACIÓN ---
+    // --- 1. INICIO (RESET TOTAL) ---
     encoder.initialize()
-           .codepage('cp858') // Soporte Ñ y tildes
-           
-           // COMANDOS RAW PARA RESETEAR FUENTES (Esto arregla el texto comprimido)
-           .raw([0x1B, 0x21, 0x00]) // ESC ! 0 (Fuente A normal)
-           .raw([0x1B, 0x33, 30])   // ESC 3 n (Interlineado un poco más aireado)
-
+           .codepage('cp858') // Ñ y Tildes
+           .raw(CMD_RESET_TOTAL) // <--- AQUÍ ESTÁ LA MAGIA
            .align('center')
            .bold(true)
            .text(data.empresa.razonSocial || 'EMPRESA')
            .newline()
            .bold(false)
-           .size('small') // RUT pequeño
+           .size('small') // Solo el RUT en pequeño
            .text(`RUT: ${data.empresa.rut || '-'}`)
            .newline()
+           .raw(CMD_RESET_TOTAL) // VOLVER A GRANDE INMEDIATAMENTE
            .text(data.empresa.direccion || 'Temuco')
            .newline()
            .newline();
 
     // --- 2. DATOS VENTA ---
     encoder.align('left')
-           .size('normal') // Asegurar normal para el cuerpo
-           .text(SEPARATOR).newline()
-           .bold(true).text(`BOLETA N: ${data.venta.id_venta}`).bold(false).newline()
-           .text(`FECHA:    ${data.venta.fecha}`).newline()
-           .text(SEPARATOR).newline();
+           .raw(CMD_RESET_TOTAL) // ASEGURAR GRANDE OTRA VEZ
+           .text(SEPARATOR)
+           .newline()
+           .bold(true)
+           .text(`BOLETA N: ${data.venta.id_venta}`)
+           .newline()
+           .bold(false)
+           .text(`FECHA:    ${data.venta.fecha}`)
+           .newline()
+           .text(SEPARATOR)
+           .newline();
 
-    // --- 3. DETALLES (Simulando tabla alineada) ---
+    // --- 3. DETALLES (Alineación manual) ---
     data.detalles.forEach(d => {
-        let nombre = (d.nombre || '').substring(0, 20); // Recortar nombre
-        let precio = formatCLP(d.subtotal);
-        let cantidad = String(d.cantidad);
+        const nombre = (d.nombre || '').substring(0, 20); 
+        const precio = formatCLP(d.subtotal);
+        const cantidad = String(d.cantidad);
 
-        // Construir línea: "1  NombreProducto ....... $1.000"
-        // Calculamos espacios necesarios para empujar el precio a la derecha
+        // Forzamos reseteo en cada línea por seguridad si tu impresora es rebelde
+        // (Puedes quitar este .raw() si ya se arregló, pero déjalo para probar)
+        encoder.raw([0x1B, 0x4D, 0x00]); 
+
+        // Cálculo de espacios para que llegue al borde derecho (48 chars)
         let textoIzq = `${cantidad} ${nombre}`;
         let espacios = LINE_WIDTH - (textoIzq.length + precio.length);
-        
-        if (espacios < 1) espacios = 1; // Mínimo un espacio
+        if (espacios < 1) espacios = 1;
 
         encoder.text(`${textoIzq}${' '.repeat(espacios)}${precio}`)
                .newline();
@@ -102,50 +106,46 @@ export async function generarTicketEscPos(data, timbreXml) {
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
 
-    // Alineación derecha manual para evitar bugs de .align('right')
-    // Simplemente rellenamos con espacios a la izquierda
     const lineaNeto = `Neto: ${formatCLP(neto)}`;
     const lineaIva = `IVA: ${formatCLP(iva)}`;
     
-    encoder.text(' '.repeat(Math.max(0, LINE_WIDTH - lineaNeto.length)) + lineaNeto).newline()
-           .text(' '.repeat(Math.max(0, LINE_WIDTH - lineaIva.length)) + lineaIva).newline();
-
+    // Alineación derecha manual
+    encoder.text(' '.repeat(Math.max(0, LINE_WIDTH - lineaNeto.length)) + lineaNeto).newline();
+    encoder.text(' '.repeat(Math.max(0, LINE_WIDTH - lineaIva.length)) + lineaIva).newline();
+    
     encoder.newline();
 
-    // TOTAL EN GRANDE
-    encoder.align('right') // Aquí sí usamos align porque cambiamos tamaño
+    // TOTAL GIGANTE
+    encoder.align('right')
            .bold(true)
-           .width(2) // Doble Ancho
-           .height(1)
+           .width(2) // Ancho x2
+           .height(2) // Alto x2 (Para que se vea bien grande)
            .text(`TOTAL: ${formatCLP(total)}`)
            .width(1) // Reset Ancho
-           .height(1)
+           .height(1) // Reset Alto
            .bold(false)
            .newline()
            .newline();
 
-    // --- 5. TIMBRE (SOLUCIÓN AL CORTE Y SALTO DE PÁGINA) ---
+    // --- 5. TIMBRE ---
     if (timbreXml) {
         try {
             const imgObj = await generatePdf417Web(timbreXml);
             if (imgObj) {
                 encoder.align('center')
-                       // .image(img, width, height, algorithm)
-                       // Ancho 300 es seguro. 'threshold' crea una imagen binaria ligera.
-                       .image(imgObj, 300, 100, 'threshold') 
+                       .image(imgObj, 300, 100, 'threshold') // Binarizado para velocidad
                        .newline()
-                       .size('small')
-                       .text('Timbre Electronico SII').newline()
-                       .text('Verifique en www.sii.cl').newline();
+                       .size('small') // Texto pequeño legal
+                       .text('Timbre Electronico SII')
+                       .newline()
+                       .text('Verifique en www.sii.cl')
+                       .newline();
             }
-        } catch (e) {
-            console.error("Fallo timbre:", e);
-            encoder.text('[Error Timbre]').newline();
-        }
+        } catch (e) { console.error(e); }
     }
 
     // --- 6. CORTE ---
-    encoder.newline().newline().newline(); // Feed 3 líneas
+    encoder.newline().newline().newline();
     encoder.cut();
 
     return encoder.encode();
