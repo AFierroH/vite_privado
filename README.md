@@ -1,8 +1,4 @@
 <p align="center">
-<a href="https://vitejs.dev/" target="blank"><img src="https://www.google.com/search?q=https://vitejs.dev/logo.svg" width="120" alt="Vite Logo" /></a>
-</p>
-
-<p align="center">
 <h1>Librería Frontend Compartida (vite_privado)</h1>
 </p>
 
@@ -11,10 +7,10 @@ Un paquete privado para centralizar componentes de UI (React) y lógica de clien
 </p>
 
 <p align="center">
-<a href="#" target="_blank"><img src="https://www.google.com/search?q=https://img.shields.io/badge/framework-React%2520%252B%2520Vite-blue.svg" alt="Framework React + Vite" /></a>
-<a href="#" target="_blank"><img src="https://www.google.com/search?q=https://img.shields.io/badge/status-privado-red.svg" alt="Paquete Privado" /></a>
-<a href="#" target="_blank"><img src="https://www.google.com/search?q=https://img.shields.io/badge/npm-v1.0.0-blue.svg" alt="NPM Version" /></a>
-<a href="#" target="_blank"><img src="https://www.google.com/search?q=https://img.shields.io/badge/license-MIT-blue.svg" alt="Package License" /></a>
+<a href="#" target="_blank"><img src="https://img.shields.io/badge/framework-React%2520%252B%2520Vite-blue.svg" alt="Framework React + Vite" /></a>
+<a href="#" target="_blank"><img src="https://img.shields.io/badge/status-privado-red.svg" alt="Paquete Privado" /></a>
+<a href="#" target="_blank"><img src="https://img.shields.io/badge/npm-v1.0.0-blue.svg" alt="NPM Version" /></a>
+<a href="#" target="_blank"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Package License" /></a>
 </p>
 
 Descripción
