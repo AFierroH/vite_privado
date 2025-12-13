@@ -1,7 +1,6 @@
 <template>
   <div class="p-4 h-full flex flex-col bg-[var(--bg-deep)] text-[var(--text-primary)] transition-colors">
     
-    <!-- BARRA SUPERIOR (CONFIG IMPRESORA) -->
     <div class="mb-4 flex flex-wrap items-center gap-4 bg-[var(--panel)] p-3 rounded border border-[var(--border)] shadow-sm">
       <div class="flex items-center gap-2">
         <label class="font-bold text-sm text-[var(--text-secondary)]">Impresora</label>
@@ -10,14 +9,12 @@
           <option value="lan">LAN (Red)</option>
         </select>
         
-        <!-- CONFIG LAN -->
         <div v-if="printerType === 'lan'" class="flex items-center gap-2">
            <input v-model="printerInfo.ip" placeholder="192.168.x.x" class="p-2 w-36 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" />
            <input v-model.number="printerInfo.port" type="number" placeholder="9100" class="p-2 w-20 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" />
            <button @click="fillLocalIp" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-2 rounded font-bold" title="Usar mi subred">Mi IP</button>
         </div>
 
-        <!-- CONFIG USB -->
         <div v-if="printerType === 'usb'" class="flex items-center gap-2">
            <select v-model="selectedUsbDevice" class="p-2 w-48 md:w-64 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" @change="handleUsbSelect">
               <option :value="null">-- Seleccionar --</option>
@@ -35,15 +32,11 @@
       </div>
     </div>
 
-    <!-- AREA DE TRABAJO -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden pb-1">
       
-      <!-- IZQUIERDA: BUSCADOR Y PRODUCTOS -->
       <div class="lg:col-span-2 flex flex-col overflow-hidden">
          
-         <!-- INPUT MANUAL (Buscador) -->
          <div class="p-4 bg-[var(--panel)] rounded mb-4 border border-[var(--border)] shadow-sm">
-             <!-- Este input es para búsqueda manual, el escáner funciona globalmente -->
              <input 
                 ref="searchInput"
                 v-model="q" 
@@ -53,7 +46,6 @@
              />
          </div>
 
-         <!-- LISTA DE PRODUCTOS -->
          <div class="p-4 bg-[var(--panel)] rounded flex-1 flex flex-col overflow-hidden border border-[var(--border)] shadow-sm relative">
              <div v-if="isLoading" class="absolute inset-0 bg-[var(--panel)]/80 backdrop-blur-sm flex items-center justify-center z-10">
                 <svg class="animate-spin h-8 w-8 text-[var(--accent)]" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -77,7 +69,6 @@
          </div>
       </div>
 
-      <!-- DERECHA: CARRITO -->
       <div class="bg-[var(--panel)] rounded flex flex-col h-full border border-[var(--border)] shadow-sm overflow-hidden">
          <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)]"><h3 class="font-bold text-lg">Ticket de Venta</h3></div>
          <div class="flex-1 overflow-y-auto p-2 custom-scroll">
@@ -121,12 +112,11 @@ import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
 import { generarTicketEscPos } from "../utils/escposEncoder.js"; 
 import { PrinterService } from '../utils/PrinterService.js'; 
-import { ScannerListener } from '../utils/ScannerListener.js'; // IMPORTAR SCANNER
+import { ScannerListener } from '../utils/ScannerListener.js';
 
 const { currentUser } = useAuth()
 const searchInput = ref(null)
 
-// --- CONFIG IMPRESORA ---
 const savedConfig = JSON.parse(localStorage.getItem('printer_config') || '{}')
 const printerType = ref(savedConfig.type || 'usb')
 const printerInfo = ref(savedConfig.info || { ip: '', port: 9100 })
@@ -146,37 +136,29 @@ watch([printerType, printerInfo, usarImpresora, selectedUsbDevice], () => {
   }))
 }, { deep: true })
 
-// --- ESTADO VENTA ---
 const q = ref(''); const productos = ref([]); const cart = ref([]);
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0));
 function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
 function clear() { cart.value = []; q.value = ''; search(); }
 
-// --- MANEJO DE ESCÁNER GLOBAL ---
 async function handleGlobalScan(code, isInputFocused) {
-    // 1. Si el foco está en el buscador manual, dejamos que el input actúe normalmente
-    // para no duplicar la búsqueda.
     if (isInputFocused) return;
 
-    // 2. Si no hay foco (escaneo al aire), buscamos y agregamos automáticamente
     try {
+        console.log("Buscando código escaneado:", code);
         const r = await fetchProducts(code); 
         const list = r.data ?? r;
         
         if (list && list.length > 0) {
-            // Producto encontrado: Agregamos el primero (match exacto o cercano)
             addProduct(list[0]);
-            // Opcional: Feedback visual/sonoro
-            console.log("Producto escaneado:", list[0].nombre);
         } else {
-            alert('Producto no encontrado: ' + code);
+            alert('Producto no encontrado con código: ' + code);
         }
     } catch (e) {
         console.error("Error al buscar escaneo:", e);
     }
 }
 
-// --- LOGICA PRODUCTOS ---
 async function search() {
     isLoading.value = true;
     const session = JSON.parse(localStorage.getItem('session') || '{}');
@@ -198,7 +180,6 @@ function addProduct(p) {
     }
 }
 
-// --- CHECKOUT / IMPRESIÓN ---
 async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío');
     isLoading.value = true;
@@ -217,7 +198,7 @@ async function checkout() {
             nombre: i.nombre 
         })),
         pagos: [{ id_pago: 1, monto: total.value }], 
-        usarImpresora: false // Backend no imprime, lo hacemos desde front
+        usarImpresora: false 
     };
 
     try {
@@ -236,7 +217,6 @@ async function checkout() {
                 total: total.value
             };
             
-            // Generar bytes para web si es necesario
             let rawBytes = null;
             if (!isElectron) {
                 rawBytes = await generarTicketEscPos(printDataObj, timbreXml);
@@ -253,7 +233,6 @@ async function checkout() {
             });
         }
         
-        // Reset
         cart.value = [];
         if(isElectron) alert('Venta finalizada');
 
@@ -265,12 +244,10 @@ async function checkout() {
     }
 }
 
-// --- HELPERS INTERFAZ ---
 async function listUsbDevices() {
     isLoading.value = true;
     try {
         usbDevices.value = await PrinterService.listarUSB();
-        // Autoselección Electron
         if (isElectron && savedConfig.lastUsbVal && usbDevices.value.length > 0) {
             const saved = savedConfig.lastUsbVal;
             const found = usbDevices.value.find(d => d.val.vid === saved.vid && d.val.pid === saved.pid);
@@ -300,21 +277,14 @@ async function fillLocalIp() {
     }
 }
 
-// --- CICLO DE VIDA ---
 onMounted(() => {
-    // 1. Cargar productos iniciales
     search();
-    
-    // 2. Cargar impresoras
     listUsbDevices();
     if(isElectron) fillLocalIp();
-
-    // 3. ACTIVAR ESCUCHA GLOBAL DE ESCÁNER
     ScannerListener.onScan(handleGlobalScan);
 });
 
 onUnmounted(() => {
-    // LIMPIAR ESCUCHA
     ScannerListener.offScan(handleGlobalScan);
 });
 </script>

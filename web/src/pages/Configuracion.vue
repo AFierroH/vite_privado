@@ -1,105 +1,137 @@
 <template>
   <div class="h-full w-full flex flex-col p-6 bg-[var(--bg-deep)] text-[var(--text-primary)] transition-colors">
     <h2 class="text-2xl font-semibold mb-6">Configuración</h2>
-    
+
+    <!-- LOGO EMPRESA -->
     <div class="mb-8 p-4 bg-[var(--panel)] rounded border border-[var(--border)] shadow-sm">
-      <h3 class="text-lg font-medium mb-4 text-[var(--text-primary)]">Logo de la Empresa</h3>
-      <div class="flex flex-col sm:flex-row items-start gap-6">
-        
-        <div class="w-32 h-32 bg-[var(--input-bg)] rounded flex items-center justify-center overflow-hidden border border-[var(--border)]">
+      <h3 class="text-lg font-medium mb-4">Logo de la Empresa</h3>
+
+      <div class="flex flex-col sm:flex-row gap-6">
+        <div class="w-32 h-32 bg-[var(--input-bg)] rounded flex items-center justify-center overflow-hidden border">
           <img v-if="previewUrl" :src="previewUrl" class="object-contain w-full h-full" />
-          <span v-else class="text-[var(--muted)] text-xs text-center px-2">Sin logo</span>
+          <span v-else class="text-xs text-[var(--muted)]">Sin logo</span>
         </div>
 
         <div class="flex flex-col gap-3">
-          <p class="text-sm text-[var(--muted)]">
-            Este logo se usará en la barra superior y se convertirá automáticamente <br>
-            a blanco y negro (150px) para los tickets.
-          </p>
-          
-          <input type="file" ref="fileInput" @change="handleFileSelect" accept="image/png, image/jpeg" class="hidden" />
-          
+          <input type="file" ref="fileInput" @change="handleLogoSelect" accept="image/png, image/jpeg" class="hidden" />
+
           <div class="flex gap-2">
-            <button @click="$refs.fileInput.click()" class="px-4 py-2 bg-[var(--input-bg)] border border-[var(--border)] rounded text-[var(--text-primary)] hover:border-[var(--accent)] transition-colors">
+            <button @click="$refs.fileInput.click()" class="px-4 py-2 border rounded">
               Seleccionar Imagen
             </button>
-            <button v-if="selectedFile" @click="upload" class="px-4 py-2 bg-[var(--accent)] text-[var(--text-on-accent)] rounded font-bold shadow hover:opacity-90">
-              Subir y Guardar
+
+            <button v-if="logoFile" @click="uploadLogo" class="px-4 py-2 bg-[var(--accent)] text-white rounded font-bold">
+              Subir Logo
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="flex flex-wrap gap-4 items-center p-4 bg-[var(--panel)] rounded border border-[var(--border)]">
-      <label class="text-[var(--text-primary)] font-medium">Tema de la aplicación:</label>
-      
-      <button @click="set('dark')" 
-        class="px-4 py-2 rounded border transition-colors flex items-center gap-2"
-        :class="isDark ? 'bg-[var(--accent)] text-white border-transparent' : 'bg-[var(--input-bg)] text-[var(--text-primary)] border-[var(--border)]'">
-        <span>🌙 Oscuro</span>
-      </button>
-      
-      <button @click="set('light')" 
-        class="px-4 py-2 rounded border transition-colors flex items-center gap-2"
-        :class="!isDark ? 'bg-[var(--accent)] text-white border-transparent' : 'bg-[var(--input-bg)] text-[var(--text-primary)] border-[var(--border)]'">
-        <span>☀️ Claro</span>
-      </button>
+    <!-- CAF / FOLIOS -->
+    <div class="mb-8 p-4 bg-[var(--panel)] rounded border border-[var(--border)] shadow-sm">
+      <h3 class="text-lg font-medium mb-4">Folios SII (CAF)</h3>
+
+      <div class="max-w-lg flex flex-col gap-4">
+        <select v-model="empresaId" class="px-3 py-2 border rounded bg-[var(--input-bg)]">
+          <option v-for="e in empresas" :key="e.id_empresa" :value="e.id_empresa">
+            {{ e.nombre }} ({{ e.rut }})
+          </option>
+        </select>
+
+        <input type="file" accept=".xml" @change="handleCafSelect" />
+
+        <button
+          v-if="cafFile"
+          @click="uploadCaf"
+          class="px-4 py-2 bg-green-600 text-white rounded font-bold">
+          Subir CAF XML
+        </button>
+
+        <div v-if="cafInfo" class="text-sm text-[var(--muted)] border-t pt-3">
+          <p><b>Tipo DTE:</b> {{ cafInfo.tipo_dte }}</p>
+          <p><b>Desde:</b> {{ cafInfo.folio_desde }}</p>
+          <p><b>Hasta:</b> {{ cafInfo.folio_hasta }}</p>
+          <p><b>Actual:</b> {{ cafInfo.folio_actual }}</p>
+          <p><b>Activo:</b> {{ cafInfo.activo ? 'Sí' : 'No' }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEMA -->
+    <div class="p-4 bg-[var(--panel)] rounded border">
+      <h3 class="text-lg font-medium mb-4">Tema</h3>
+
+      <div class="flex gap-4">
+        <button @click="setTheme('dark')" class="px-4 py-2 border rounded">
+          Oscuro
+        </button>
+        <button @click="setTheme('light')" class="px-4 py-2 border rounded">
+          Claro
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { uploadEmpresaLogo } from '../api'
+import { ref, onMounted } from 'vue'
+import {
+  uploadEmpresaLogo,
+  uploadCafXml,
+  getEmpresas
+} from '../api'
 
+/* ---------- LOGO ---------- */
 const fileInput = ref(null)
-const selectedFile = ref(null)
+const logoFile = ref(null)
 const previewUrl = ref(null)
 
-// Detectar tema actual para los botones
-const isDark = ref(document.documentElement.classList.contains('dark'))
+function handleLogoSelect(e) {
+  logoFile.value = e.target.files[0]
+  previewUrl.value = URL.createObjectURL(logoFile.value)
+}
 
-function set(mode) {
+async function uploadLogo() {
+  const session = JSON.parse(localStorage.getItem('session') || '{}')
+  const empresaId = session.user?.id_empresa || 1
+  const r = await uploadEmpresaLogo(empresaId, logoFile.value)
+  previewUrl.value = r.logo_url
+  alert('Logo actualizado')
+}
+
+/* ---------- CAF ---------- */
+const empresas = ref([])
+const empresaId = ref(null)
+const cafFile = ref(null)
+const cafInfo = ref(null)
+
+function handleCafSelect(e) {
+  cafFile.value = e.target.files[0]
+}
+
+async function uploadCaf() {
+  const r = await uploadCafXml(empresaId.value, cafFile.value)
+  cafInfo.value = r
+  cafFile.value = null
+  alert('CAF cargado correctamente')
+}
+
+/* ---------- TEMA ---------- */
+function setTheme(mode) {
   document.documentElement.classList.toggle('dark', mode === 'dark')
-  isDark.value = mode === 'dark'
-  // Opcional: Guardar preferencia
   localStorage.setItem('theme', mode)
 }
 
-function handleFileSelect(event) {
-  const file = event.target.files[0]
-  if (!file) return
-  selectedFile.value = file
-  previewUrl.value = URL.createObjectURL(file)
-}
+/* ---------- INIT ---------- */
+onMounted(async () => {
+  empresas.value = await getEmpresas()
+  empresaId.value = empresas.value[0]?.id_empresa
 
-async function upload() {
-  if (!selectedFile.value) return
   const session = JSON.parse(localStorage.getItem('session') || '{}')
-  const empresaId = session.user?.id_empresa || session.empresa?.id_empresa || 1
-  
-  try {
-    const updated = await uploadEmpresaLogo(empresaId, selectedFile.value)
-    alert('Logo subido correctamente.')
-    if (session.empresa) {
-        session.empresa.logo_url = updated.logo_url
-        localStorage.setItem('session', JSON.stringify(session))
-    }
-    if (window.electronAPI?.cacheLogo) {
-       window.electronAPI.cacheLogo(updated.logo_url)
-    }
-  } catch (e) {
-    alert('Error al subir imagen')
-  }
-}
+  if (session.empresa?.logo_url) previewUrl.value = session.empresa.logo_url
 
-onMounted(() => {
-    const session = JSON.parse(localStorage.getItem('session') || '{}')
-    if (session.empresa?.logo_url) previewUrl.value = session.empresa.logo_url
-    
-    // Recuperar tema
-    const savedTheme = localStorage.getItem('theme')
-    if(savedTheme) set(savedTheme)
+  const savedTheme = localStorage.getItem('theme')
+  if (savedTheme) setTheme(savedTheme)
 })
 </script>

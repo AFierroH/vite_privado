@@ -26,7 +26,7 @@ const globalKeyHandler = (e) => {
         buffer += e.key;
     }
 
-    // 3. Al dar Enter, enviamos el código
+    // 3. Al dar Enter, enviamos el código y limpiamos
     if (isEnter) {
         if (buffer.length >= MIN_LENGTH) {
             // Notificar a quien esté escuchando (Ventas o Productos)
@@ -41,7 +41,7 @@ const globalKeyHandler = (e) => {
     }
 };
 
-// Iniciar escucha global
+// Iniciar escucha global si estamos en el navegador
 if (typeof window !== 'undefined') {
     window.addEventListener('keydown', globalKeyHandler);
 }
