@@ -95,9 +95,17 @@ function handleLogoSelect(e) {
 async function uploadLogo() {
   const session = JSON.parse(localStorage.getItem('session') || '{}')
   const empresaId = session.user?.id_empresa || 1
+
+  // 1️⃣ Subir SIEMPRE al backend
   const r = await uploadEmpresaLogo(empresaId, logoFile.value)
   previewUrl.value = r.logo_url
-  alert('Logo actualizado')
+
+  // 2️⃣ Si es Electron → cachear
+  if (window.electronAPI) {
+    await window.electronAPI.cacheLogo(empresaId, r.logo_url)
+  }
+
+  alert('Logo actualizado correctamente')
 }
 
 /* ---------- CAF ---------- */

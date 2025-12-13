@@ -219,7 +219,30 @@ ipcMain.handle('printFromData', async (event, sale, opts) => {
     try { await printTicket(sale, opts); return { ok: true }; } 
     catch (err) { console.error(err); return { ok: false, error: String(err) }; }
 });
+ipcMain.handle('cacheLogo', async (event, { empresaId, logoUrl }) => {
+  try {
+    const logosDir = path.join(app.getPath('userData'), 'logos')
+    if (!fs.existsSync(logosDir)) {
+      fs.mkdirSync(logosDir, { recursive: true })
+    }
 
+    const ext = path.extname(logoUrl).split('?')[0] || '.png'
+    const localPath = path.join(logosDir, `empresa_${empresaId}${ext}`)
+
+    // Descargar logo
+    const res = await fetch(logoUrl)
+    const buffer = Buffer.from(await res.arrayBuffer())
+    fs.writeFileSync(localPath, buffer)
+
+    return {
+      ok: true,
+      localPath
+    }
+  } catch (e) {
+    console.error('Error cacheando logo:', e)
+    return { ok: false, error: String(e) }
+  }
+})
 // Configuración Ventana
 let mainWindow;
 function createWindow() {

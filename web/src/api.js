@@ -153,8 +153,26 @@ export async function fetchEmpresa(id) {
 export function uploadEmpresaLogo(idEmpresa, file) {
   const formData = new FormData()
   formData.append('file', file)
+
   return api.post(`/empresas/${idEmpresa}/logo`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }).then(r => r.data)
+}
+
+export async function uploadCafXml(empresaId, file) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('empresa_id', empresaId)
+
+  const { data } = await axios.post('/folios/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+
+  return data
+}
+
+export async function getEmpresas() {
+  const { data } = await axios.get('/empresa')
+  return data
 }
 export { api }

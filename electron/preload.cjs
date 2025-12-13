@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLocalIp: () => ipcRenderer.invoke('getLocalIp'),
   buildTicket: (sale, opts) => ipcRenderer.invoke('buildTicket', sale, opts),
   printFromData: (sale, opts) => ipcRenderer.invoke('printFromData', sale, opts),
-  cacheLogo: (url) => ipcRenderer.invoke('cacheLogo', url),
+  cacheLogo: (empresaId, logoUrl) =>
+    ipcRenderer.invoke('cacheLogo', { empresaId, logoUrl }),
 });
