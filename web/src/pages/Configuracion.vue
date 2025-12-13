@@ -96,13 +96,31 @@ async function uploadLogo() {
   const session = JSON.parse(localStorage.getItem('session') || '{}')
   const empresaId = session.user?.id_empresa || 1
 
-  // 1️⃣ Subir SIEMPRE al backend
   const r = await uploadEmpresaLogo(empresaId, logoFile.value)
-  previewUrl.value = r.logo_url
+  
+  // PARCHE PARA ASEGURAR HTTPS:
+  // Si la respuesta es solo "/uploads/foto.png", está bien.
+  // Si la respuesta trae "http://147...", lo forzamos a relativo.
+  let cleanUrl = r.logo_url;
+  if (cleanUrl.includes('http://')) {
+      // Tomamos solo la parte desde /uploads
+      const parts = cleanUrl.split('/uploads/');
+      if (parts.length > 1) {
+          cleanUrl = '/uploads/' + parts[1];
+      }
+  }
+  
+  previewUrl.value = cleanUrl; // Ahora será "/uploads/foto.png" y el navegador usará HTTPS automáticamente
 
-  // 2️⃣ Si es Electron → cachear
+  // Actualizar sesión local para que no desaparezca al recargar
+  if(session.empresa) {
+      session.empresa.logo_url = cleanUrl;
+      localStorage.setItem('session', JSON.stringify(session));
+  }
+
+  // 2️⃣ Si es Electron...
   if (window.electronAPI) {
-    await window.electronAPI.cacheLogo(empresaId, r.logo_url)
+    await window.electronAPI.cacheLogo(empresaId, cleanUrl)
   }
 
   alert('Logo actualizado correctamente')
