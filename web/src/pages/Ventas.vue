@@ -1,6 +1,7 @@
 <template>
   <div class="p-4 h-full flex flex-col bg-[var(--bg-deep)] text-[var(--text-primary)] transition-colors">
     
+    <!-- BARRA SUPERIOR (CONFIG IMPRESORA) -->
     <div class="mb-4 flex flex-wrap items-center gap-4 bg-[var(--panel)] p-3 rounded border border-[var(--border)] shadow-sm">
       <div class="flex items-center gap-2">
         <label class="font-bold text-sm text-[var(--text-secondary)]">Impresora</label>
@@ -9,12 +10,14 @@
           <option value="lan">LAN (Red)</option>
         </select>
         
+        <!-- CONFIG LAN -->
         <div v-if="printerType === 'lan'" class="flex items-center gap-2">
            <input v-model="printerInfo.ip" placeholder="192.168.x.x" class="p-2 w-36 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" />
            <input v-model.number="printerInfo.port" type="number" placeholder="9100" class="p-2 w-20 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" />
            <button @click="fillLocalIp" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-2 rounded font-bold" title="Usar mi subred">Mi IP</button>
         </div>
 
+        <!-- CONFIG USB -->
         <div v-if="printerType === 'usb'" class="flex items-center gap-2">
            <select v-model="selectedUsbDevice" class="p-2 w-48 md:w-64 rounded bg-[var(--input-bg)] border border-[var(--input-border)] text-sm outline-none" @change="handleUsbSelect">
               <option :value="null">-- Seleccionar --</option>
@@ -32,11 +35,15 @@
       </div>
     </div>
 
+    <!-- AREA DE TRABAJO -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden pb-1">
       
+      <!-- IZQUIERDA: BUSCADOR Y PRODUCTOS -->
       <div class="lg:col-span-2 flex flex-col overflow-hidden">
          
+         <!-- INPUT MANUAL (Buscador) -->
          <div class="p-4 bg-[var(--panel)] rounded mb-4 border border-[var(--border)] shadow-sm">
+             <!-- Este input es para búsqueda manual, el escáner funciona globalmente -->
              <input 
                 ref="searchInput"
                 v-model="q" 
@@ -46,6 +53,7 @@
              />
          </div>
 
+         <!-- LISTA DE PRODUCTOS -->
          <div class="p-4 bg-[var(--panel)] rounded flex-1 flex flex-col overflow-hidden border border-[var(--border)] shadow-sm relative">
              <div v-if="isLoading" class="absolute inset-0 bg-[var(--panel)]/80 backdrop-blur-sm flex items-center justify-center z-10">
                 <svg class="animate-spin h-8 w-8 text-[var(--accent)]" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -69,6 +77,7 @@
          </div>
       </div>
 
+      <!-- DERECHA: CARRITO -->
       <div class="bg-[var(--panel)] rounded flex flex-col h-full border border-[var(--border)] shadow-sm overflow-hidden">
          <div class="p-4 border-b border-[var(--border)] bg-[var(--bg-deep)]"><h3 class="font-bold text-lg">Ticket de Venta</h3></div>
          <div class="flex-1 overflow-y-auto p-2 custom-scroll">

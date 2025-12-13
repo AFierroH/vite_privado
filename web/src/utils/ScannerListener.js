@@ -1,5 +1,3 @@
-// src/utils/ScannerListener.js
-
 // Configuración para diferenciar humano vs pistola
 const SCAN_TIMEOUT = 50; // ms máximos entre teclas (las pistolas son muy rápidas)
 const MIN_LENGTH = 3;    // Longitud mínima de un código válido
