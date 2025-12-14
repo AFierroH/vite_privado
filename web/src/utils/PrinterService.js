@@ -89,11 +89,17 @@ export const PrinterService = {
         // CASO C: WEB - USB (Usa WebUSB Nativo)
         if (params.printerType === 'usb') {
             let device = params.printerVal;
-            
-            // Si es un placeholder o está cerrado, pedir acceso
+            // Primero verificamos si device existe. Si es null, lanzamos error antes de intentar leer propiedades.
+            if (!device) {
+                throw new Error("No hay impresora USB seleccionada.");
+            }
+
+            // Ahora es seguro leer 'device.open' porque sabemos que device no es null
             if (device === "NEW_WEBUSB" || !device.open) {
                 device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
             }
+            
+            // Verificación doble por si el usuario canceló el popup de selección
             if (!device) throw new Error("Sin dispositivo USB seleccionado.");
 
             try {

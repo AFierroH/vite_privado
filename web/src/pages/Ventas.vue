@@ -98,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch, h } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, h, nextTick} from 'vue'
 import { fetchProducts, emitirVenta } from '../api'
 import { useAuth } from '../composables/useAuth.js'
 import { generarTicketEscPos } from "../utils/escposEncoder.js"; 
