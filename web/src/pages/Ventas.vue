@@ -286,11 +286,11 @@ async function checkout() {
 
         const folioReal = data.folio || '---';
         const timbreXml = data.timbre;
-
+        console.log("🖨️ Datos para imprimir:", { folioFiscal, tieneTimbre: !!timbreXml });
         if (usarImpresora.value) {
             const printDataObj = {
                 empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
-                venta: { id_venta: folioReal, fecha: new Date().toLocaleString() },
+                venta: { folio: folioFiscal, id_venta: data.venta?.id_venta || 'N/A', fecha: new Date().toLocaleString() },
                 detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
                 total: total.value
             };
