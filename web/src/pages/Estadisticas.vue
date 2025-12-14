@@ -169,11 +169,16 @@ const totalPeriodo = computed(() => ventasData.value.reduce((acc, v) => acc + v.
 // --- LOGICA ---
 
 function checkRole() {
+    console.log("Usuario actual:", currentUser.value); // <--- AGREGAR ESTO
+    
     // Ajusta esto según cómo guardes el rol en tu objeto usuario
     const rol = currentUser.value?.rol || 'vendedor';
+    
+    console.log("Rol detectado:", rol); // <--- Y ESTO
+
     if (rol === 'admin' || rol === 'analista') {
         hasAccess.value = true;
-        loadData(); // Cargar solo si tiene permiso
+        loadData(); 
     } else {
         hasAccess.value = false;
     }
@@ -242,7 +247,17 @@ function drawChart() {
 watch(chartType, drawChart); // Redibujar si cambia el tipo de gráfico
 
 onMounted(() => {
-    checkRole();
+    // Intentar chequear inmediatamente
+    if (currentUser.value) {
+        checkRole();
+    }
+});
+
+// Agrega este watcher para reaccionar cuando el usuario cargue
+watch(currentUser, (newUser) => {
+    if (newUser) {
+        checkRole();
+    }
 });
 </script>
 
