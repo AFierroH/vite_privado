@@ -123,15 +123,20 @@ async function upload() {
   if (!file.value) return alert('Selecciona un archivo .sql')
 
   try {
-    const { data } = await uploadSql(file.value)
-    if (!data.uploadId) throw new Error('No se recibió uploadId')
+    // CORRECCIÓN: Quitamos { data } y usamos una variable directa
+    const response = await uploadSql(file.value) 
+    
+    if (!response.uploadId) throw new Error('No se recibió uploadId')
 
-    uploadId.value = data.uploadId
-    const parsedResp = await getParsed(data.uploadId)
-    parsedTables.value = parsedResp.data
+    uploadId.value = response.uploadId
+    
+    // Lo mismo para los siguientes (aunque getParsed suele devolver array directo en tu api.js, verifica si devuelve { data: [...] } o [...])
+    // Asumiendo que tu api.js devuelve r.data siempre:
+    const parsedResp = await getParsed(response.uploadId)
+    parsedTables.value = parsedResp // o parsedResp.data si tu backend lo envuelve
 
     const schemaResp = await getDestSchema()
-    destSchema.value = schemaResp.data
+    destSchema.value = schemaResp // o schemaResp.data
 
     alert('Archivo subido y parseado correctamente')
   } catch (err: any) {
@@ -173,15 +178,19 @@ async function preview() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await previewMapping({
+    // CORRECCIÓN: Quitamos el destructuring { data }
+    const response = await previewMapping({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
       mapping: payload,
     })
 
-    previewResult.value = data
-    previewHeader.value = Object.keys(data.preview[0] || {})
+    // Usamos 'response' directamente porque api.js ya devolvió la data limpia
+    previewResult.value = response
+    // Accedemos a response.preview de forma segura
+    previewHeader.value = Object.keys(response.preview?.[0] || {})
+
   } catch (err: any) {
     console.error('Error en preview:', err)
     alert(`Error al previsualizar: ${err.response?.data?.message || err.message}`)
@@ -194,6 +203,10 @@ async function finalizeImport() {
     return alert('Selecciona ambas tablas')
 
   try {
+    // 1. OBTENER ID EMPRESA DE LA SESIÓN (Lógica Automática)
+    const session = JSON.parse(localStorage.getItem('session') || '{}')
+    const myEmpresaId = session.user?.id_empresa || 1 // Fallback al 1 si falla
+
     const payload: Record<string, any> = {}
     for (const f of destSchema.value[selectedDestTable.value]) {
       const chosen = mapping[f]
@@ -201,17 +214,21 @@ async function finalizeImport() {
       else payload[f] = chosen || ''
     }
 
-    const { data } = await processImport({
+    // 2. ENVIAMOS 'empresaId' AL BACKEND
+    const response = await processImport({
       uploadId: uploadId.value,
       sourceTable: selectedSourceTable.value,
       destTable: selectedDestTable.value,
       mapping: payload,
       staticValues,
+      empresaId: myEmpresaId, // <--- AQUÍ VA LA MAGIA
     })
 
-    if (data.inserted)
-      alert(`Importación completa. Insertadas ${data.inserted} filas.`)
-    else throw new Error(data.error || 'No se insertaron filas')
+    if (response.inserted)
+      alert(`Importación completa. Insertadas ${response.inserted} filas.`)
+    else 
+      throw new Error(response.error || 'No se insertaron filas')
+
   } catch (err: any) {
     console.error('Error en finalizeImport:', err)
     alert(`Error en importación: ${err.response?.data?.message || err.message}`)
