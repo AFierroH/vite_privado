@@ -158,13 +158,15 @@ export function uploadEmpresaLogo(idEmpresa, file) {
     headers: { 'Content-Type': 'multipart/form-data' }
   }).then(r => r.data)
 }
-//a
+
 export async function uploadCafXml(empresaId, file) {
   const form = new FormData()
   form.append('file', file)
   form.append('empresa_id', empresaId)
 
-  const { data } = await axios.post('/folios/upload', form, {
+  // ERROR ERA AQUÍ: usabas axios.post
+  // CORRECCIÓN: usar api.post
+  const { data } = await api.post('/folios/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 
@@ -172,7 +174,9 @@ export async function uploadCafXml(empresaId, file) {
 }
 
 export async function getEmpresas() {
-  const { data } = await axios.get('/empresa')
+  // ERROR ERA AQUÍ: usabas axios.get
+  // CORRECCIÓN: usar api.get
+  const { data } = await api.get('/empresas') // Ojo: verifica si tu ruta es singular o plural en el backend
   return data
 }
 export { api }
