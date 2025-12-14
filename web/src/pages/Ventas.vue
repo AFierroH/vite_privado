@@ -270,10 +270,9 @@ async function checkout() {
     const session = JSON.parse(localStorage.getItem('session') || '{}');
     const user = currentUser.value || session.user || {};
     const empresa = session.empresa || {};
-    const myEmpresaId = user.id_empresa || user.empresaId || 1;
     const payload = {
         id_usuario: user.id || 1, 
-        id_empresa: myEmpresaId,
+        id_empresa: user.id_empresa || 1,
         total: total.value,
         detalles: cart.value.map(i => ({ 
             id_producto: i.id_producto, 
@@ -287,23 +286,21 @@ async function checkout() {
 
     try {
         const resp = await emitirVenta(payload);
-        const data = resp?.data ?? resp;
-        if (!data) throw new Error("Sin respuesta del servidor");
+        const data = resp?.data ?? resp; // Manejar axios wrapper
+        
+        if (!data || !data.venta) throw new Error("Error: Respuesta inválida del servidor");
 
-        // --- CORRECCIÓN AQUÍ ---
-        // Antes decía: const folioReal = ...
-        // Ahora usamos el mismo nombre que abajo:
-        const folioFiscal = data.folio || '---'; 
-        const timbreXml = data.timbre;
+        const folioParaImprimir = data.folio || data.venta.id_venta || '---';
+        const timbreXml = data.timbre; // Puede ser null si falló el DTE
 
-        console.log("🖨️ Datos para imprimir:", { folioFiscal, tieneTimbre: !!timbreXml });
+        console.log("🖨️ Imprimiendo Folio:", folioParaImprimir);
 
         if (usarImpresora.value) {
             const printDataObj = {
                 empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
                 venta: { 
-                    folio: folioFiscal, // Ahora sí existe esta variable
-                    id_venta: data.venta?.id_venta || 'N/A', 
+                    folio: folioParaImprimir, // <--- VARIABLE CORRECTA
+                    id_venta: data.venta.id_venta, 
                     fecha: new Date().toLocaleString() 
                 },
                 detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
@@ -327,7 +324,7 @@ async function checkout() {
         }
         
         cart.value = [];
-        if(isElectron) alert('Venta finalizada');
+        if(isElectron) alert(`Venta Finalizada. Folio: ${folioParaImprimir}`);
 
     } catch (e) {
         console.error(e);
