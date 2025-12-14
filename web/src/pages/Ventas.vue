@@ -260,6 +260,12 @@ function addProduct(p) {
 
 async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío');
+    
+    if (usarImpresora.value && printerType.value === 'usb' && !selectedUsbDevice.value && !isElectron) {
+        alert("⚠️ Selecciona una impresora USB antes de pagar.");
+        return;
+    }
+
     isLoading.value = true;
     const session = JSON.parse(localStorage.getItem('session') || '{}');
     const user = currentUser.value || session.user || {};
@@ -284,13 +290,22 @@ async function checkout() {
         const data = resp?.data ?? resp;
         if (!data) throw new Error("Sin respuesta del servidor");
 
-        const folioReal = data.folio || '---';
+        // --- CORRECCIÓN AQUÍ ---
+        // Antes decía: const folioReal = ...
+        // Ahora usamos el mismo nombre que abajo:
+        const folioFiscal = data.folio || '---'; 
         const timbreXml = data.timbre;
+
         console.log("🖨️ Datos para imprimir:", { folioFiscal, tieneTimbre: !!timbreXml });
+
         if (usarImpresora.value) {
             const printDataObj = {
                 empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
-                venta: { folio: folioFiscal, id_venta: data.venta?.id_venta || 'N/A', fecha: new Date().toLocaleString() },
+                venta: { 
+                    folio: folioFiscal, // Ahora sí existe esta variable
+                    id_venta: data.venta?.id_venta || 'N/A', 
+                    fecha: new Date().toLocaleString() 
+                },
                 detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
                 total: total.value
             };
