@@ -17,12 +17,14 @@ async function generatePdf417Web(dataStr) {
     try {
         bwipjs.toCanvas(canvas, {
             bcid: 'pdf417',
-            text: dataStr.trim(),
-            scale: 2,
-            height: 10,
+            text: dataStr, // El XML directo
+            scale: 2,      // Escala 2 está bien para web
+            height: 10,    // Altura de las barras
+            columns: 6,    // Fuerza al PDF417 a ser más angosto y alto 
             includetext: false,
             eclevel: 5,
-            padding: 0
+            padding: 2,
+            backgroundcolor: 'ffffff' // Fondo blanco explícito
         });
         const img = new Image();
         img.src = canvas.toDataURL('image/png');
