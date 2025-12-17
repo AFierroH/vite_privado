@@ -299,10 +299,11 @@ async function checkout() {
         // Extraer datos de la respuesta
         const folioParaImprimir = data.folio || data.venta.id_venta || '---';
         const timbreXml = data.timbre || null; // El TED completo para imprimir
+        const pdf417Img = data.ticket?.pdf417Base64 || null; // <--- NUEVO: Capturamos la imagen
 
         console.log(`🎫 Folio recibido: ${folioParaImprimir}`);
-        console.log(`🔏 ¿Tiene timbre?: ${timbreXml ? 'SÍ' : 'NO'}`);
-
+        console.log(`🔏 ¿Tiene timbre XML?: ${timbreXml ? 'SÍ' : 'NO'}`);
+        console.log(`🖼️ ¿Tiene imagen PDF417?: ${pdf417Img ? 'SÍ' : 'NO'}`);
         // IMPRIMIR si está activado
         if (usarImpresora.value) {
             try {
@@ -331,7 +332,7 @@ async function checkout() {
                 // Generar bytes ESC/POS solo en web (no en Electron)
                 if (!isElectron) {
                     const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
-                    rawBytes = await generarTicketEscPos(printDataObj, timbreXml);
+                    rawBytes = await generarTicketEscPos(printDataObj, timbreXml, pdf417Img);
                 }
 
                 // Enviar a imprimir
