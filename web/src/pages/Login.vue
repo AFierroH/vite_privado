@@ -7,7 +7,7 @@ const emit = defineEmits(['login-success'])
 const email = ref('')
 const clave = ref('')
 
-// --- LÓGICA DEL FONDO ANIMADO (CANVAS) ---
+// Canvas animation code (keeping it as is)
 const canvasRef = ref(null)
 let animationFrameId = null
 let particles = []
@@ -19,17 +19,15 @@ class Particle {
     this.x = Math.random() * canvas.width
     this.y = Math.random() * canvas.height
     this.size = Math.random() * 2 + 1
-    this.speedX = Math.random() * 1 - 0.5 // Velocidad lenta
+    this.speedX = Math.random() * 1 - 0.5
     this.speedY = Math.random() * 1 - 0.5
   }
   update() {
     this.x += this.speedX
     this.y += this.speedY
-    // Rebote en bordes
     if (this.x > this.canvas.width || this.x < 0) this.speedX = -this.speedX
     if (this.y > this.canvas.height || this.y < 0) this.speedY = -this.speedY
     
-    // Interacción con Mouse
     let dx = mouse.x - this.x
     let dy = mouse.y - this.y
     let distance = Math.sqrt(dx * dx + dy * dy)
@@ -46,7 +44,7 @@ class Particle {
     }
   }
   draw(ctx) {
-    ctx.fillStyle = 'rgba(100, 255, 218, 0.8)' // Color de los puntos (Cyan neón)
+    ctx.fillStyle = 'rgba(100, 255, 218, 0.8)'
     ctx.beginPath()
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2)
     ctx.fill()
@@ -57,7 +55,6 @@ function initParticles() {
   particles = []
   const canvas = canvasRef.value
   if (!canvas) return
-  // Cantidad de partículas basada en el tamaño de pantalla
   const numberOfParticles = (canvas.width * canvas.height) / 9000
   for (let i = 0; i < numberOfParticles; i++) {
     particles.push(new Particle(canvas))
@@ -74,13 +71,12 @@ function animate() {
     particles[i].update()
     particles[i].draw(ctx)
     
-    // Dibujar líneas
     for (let j = i; j < particles.length; j++) {
       const dx = particles[i].x - particles[j].x
       const dy = particles[i].y - particles[j].y
       const distance = Math.sqrt(dx * dx + dy * dy)
       
-      if (distance < 100) { // Si están cerca, conectar
+      if (distance < 100) {
         ctx.beginPath()
         ctx.strokeStyle = `rgba(100, 255, 218, ${1 - distance / 100})`
         ctx.lineWidth = 0.5
@@ -130,13 +126,37 @@ onUnmounted(() => {
   cancelAnimationFrame(animationFrameId)
 })
 
-// --- LÓGICA DE LOGIN ORIGINAL ---
+// LOGIN LOGIC - FIXED TO ENSURE ROL IS SAVED
 function createSession(user, token, empresa, minutes = 60) {
   const expiresAt = new Date(Date.now() + minutes * 60 * 1000).toISOString()
-  const session = { user, token, empresa, expiresAt }
-  localStorage.setItem('session', JSON.stringify(session)) 
-  localStorage.setItem('token', token) 
-  auth.setSession(user, token)
+  
+  // CRITICAL: Ensure user object has rol property
+  const userWithRole = {
+    ...user,
+    rol: user.rol || user.role || 'vendedor' // Fallback if missing
+  }
+  
+  const session = { 
+    user: userWithRole, 
+    token, 
+    empresa, 
+    expiresAt 
+  }
+  
+  // Save to localStorage
+  localStorage.setItem('session', JSON.stringify(session))
+  localStorage.setItem('token', token)
+  
+  // Update auth store
+  auth.setSession(userWithRole, token)
+  
+  // Log for debugging
+  console.log('✅ Sesión creada:', {
+    usuario: userWithRole.nombre || userWithRole.email,
+    rol: userWithRole.rol,
+    empresa: empresa?.nombre
+  })
+  
   return session
 }
 
@@ -147,28 +167,52 @@ async function doLogin() {
   }
 
   try {
+    console.log('🔐 Intentando login...')
     const data = await login({ email: email.value, clave: clave.value })
+    
     const tok = data.access_token || data.token
     const user = data.user
 
-    if (!tok || !user) throw new Error('Respuesta de login incompleta')
+    if (!tok || !user) {
+      throw new Error('Respuesta de login incompleta')
+    }
 
+    console.log('📦 Respuesta del servidor:', {
+      usuario: user.email,
+      rol: user.rol || user.role,
+      tiene_empresa: !!user.id_empresa
+    })
+
+    // Fetch empresa data
     let empresaFull = data.empresa || user.empresa
     if (!empresaFull && user.id_empresa) {
         try {
             const respEmpresa = await fetchEmpresa(user.id_empresa)
             empresaFull = respEmpresa
         } catch (err) {
-            console.warn('No se pudo cargar la empresa', err)
-            empresaFull = { razonSocial: 'Empresa Generica', rut: '99.999.999-9' }
+            console.warn('⚠️ No se pudo cargar empresa:', err)
+            empresaFull = { 
+              id_empresa: user.id_empresa,
+              nombre: 'Empresa Sin Datos', 
+              rut: '99.999.999-9' 
+            }
         }
     }
 
+    // Create session (this now ensures rol is saved)
     const session = createSession(user, tok, empresaFull)
+    
+    // Verify session was saved correctly
+    const savedSession = JSON.parse(localStorage.getItem('session'))
+    console.log('✅ Sesión guardada en localStorage:', {
+      tiene_user: !!savedSession.user,
+      rol_guardado: savedSession.user?.rol
+    })
+    
     emit('login-success', session)
 
   } catch (e) {
-    console.error('Error de login:', e)
+    console.error('❌ Error de login:', e)
     alert('Usuario o contraseña incorrectos')
   }
 }
@@ -177,10 +221,8 @@ async function doLogin() {
 <template>
   <div class="relative flex items-center justify-center h-screen overflow-hidden bg-[#02040a]">
     
-    <!-- CANVAS DE FONDO ANIMADO -->
     <canvas ref="canvasRef" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
 
-    <!-- FORMULARIO LOGIN (Con z-index para estar encima) -->
     <div class="relative z-10 w-full max-w-md bg-[var(--panel)]/90 backdrop-blur-sm p-8 rounded shadow-2xl border border-gray-800">
       <h2 class="text-2xl font-semibold mb-4 text-[var(--accent)] text-center">Sistema POS</h2>
       
