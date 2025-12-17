@@ -1,173 +1,134 @@
 import EscPosEncoder from 'esc-pos-encoder';
-import bwipjs from 'bwip-js';
+import { generarPdf417Base64, extraerTedDelXml } from './pdf417Generator';
 
 const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 
-// --- COMANDOS ESC/POS ---
-const CMD_RESET = [0x1B, 0x40]; // Inicializar
-const CMD_FONT_A = [0x1B, 0x4D, 0x00]; // Fuente Normal (12x24)
-const CMD_FONT_B = [0x1B, 0x4D, 0x01]; // Fuente Pequeña (9x17)
-
 /**
- * Generador de PDF417 (Timbre)
- */
-async function generatePdf417Web(dataStr) {
-    if (!dataStr) return null;
-    const canvas = document.createElement('canvas');
-    try {
-        bwipjs.toCanvas(canvas, {
-            bcid: 'pdf417',
-            text: dataStr, // El XML directo
-            scale: 2,      // Escala 2 está bien para web
-            height: 10,    // Altura de las barras
-            columns: 6,    // Fuerza al PDF417 a ser más angosto y alto 
-            includetext: false,
-            eclevel: 5,
-            padding: 2,
-            backgroundcolor: 'ffffff' // Fondo blanco explícito
-        });
-        const img = new Image();
-        img.src = canvas.toDataURL('image/png');
-        await new Promise(r => img.onload = r);
-        return img;
-    } catch (e) {
-        console.error("Error PDF417:", e);
-        return null;
-    }
-}
-
-/**
- * Generador de Ticket ESC/POS
+ * Generador de Ticket ESC/POS con formato consistente
  */
 export async function generarTicketEscPos(data, timbreXml) {
     const encoder = new EscPosEncoder();
     
-    // Ancho para Fuente A (Normal) en 80mm = 48 caracteres aprox
-    const LINE_WIDTH = 48;
+    // Constantes de formato
+    const LINE_WIDTH = 48; // Ancho para impresoras de 80mm
     const SEPARATOR = '-'.repeat(LINE_WIDTH);
 
-    // 1. INICIALIZACIÓN Y ENCABEZADO
-    encoder.initialize()
-           .codepage('cp858')
-           .raw(CMD_RESET) 
-           .align('center')
-           
-           // Nombre Empresa (Negrita y Grande)
+    // 1. INICIALIZACIÓN
+    encoder.initialize().codepage('cp858');
+
+    // 2. ENCABEZADO EMPRESA
+    encoder.align('center')
            .bold(true)
-           .width(2) // Doble ancho para destacar nombre
-           .text((data.empresa.razonSocial || 'EMPRESA').substring(0, 24)) // Limitamos largo para que no rompa
-           .width(1) // Volver ancho normal
+           .size('normal') // Aseguramos tamaño normal
+           .text(data.empresa.razonSocial || 'EMPRESA')
            .bold(false)
            .newline()
-           
-           // RUT y Dirección (Normal)
            .text(`RUT: ${data.empresa.rut || '-'}`)
            .newline()
-           .text((data.empresa.direccion || 'Temuco').substring(0, 48))
-           .newline()
-           .newline();
+           .text(data.empresa.direccion || 'Temuco')
+           .newline(2);
 
-    // 2. DATOS DE LA VENTA
-    // Aquí es donde arreglamos el FOLIO
-    // Usamos data.venta.folio si existe (lo correcto), si no el id interno
-    const folioText = data.venta.folio && data.venta.folio !== '---' 
-                      ? data.venta.folio 
-                      : data.venta.id_venta;
-
+    // 3. INFORMACIÓN DE LA VENTA
+    const folioText = data.venta.folio || data.venta.id_venta || '---';
+    
     encoder.align('left')
            .text(SEPARATOR)
            .newline()
            .bold(true)
-           .text(`BOLETA N: ${folioText}`) // <--- CORREGIDO AQUÍ
+           .text(`BOLETA N°: ${folioText}`)
            .newline()
            .bold(false)
-           .text(`FECHA:    ${data.venta.fecha}`)
+           .text(`FECHA: ${data.venta.fecha}`)
+           .newline()
+           .text(SEPARATOR)
+           .newline(2);
+
+    // 4. ENCABEZADO DE PRODUCTOS
+    encoder.text('CANT  DESCRIPCION           SUBTOTAL')
            .newline()
            .text(SEPARATOR)
            .newline();
 
-    // 3. DETALLES
+    // 5. DETALLE DE PRODUCTOS
     data.detalles.forEach(d => {
-        const nombre = (d.nombre || '').substring(0, 22); // Cortamos nombre
-        const precio = formatCLP(d.subtotal);
-        const cantidad = String(d.cantidad);
-
-        // Formato: "2  Coca Cola ... $ 2.000"
-        let textoIzq = `${cantidad}  ${nombre}`;
+        const cant = String(d.cantidad).padEnd(6);
+        const nombre = (d.nombre || '').substring(0, 20).padEnd(20);
+        const subtotal = formatCLP(d.subtotal).padStart(10);
         
-        // Calcular espacios para alinear precio a la derecha
-        let espacios = LINE_WIDTH - (textoIzq.length + precio.length);
-        if (espacios < 1) espacios = 1;
-
-        encoder.text(`${textoIzq}${' '.repeat(espacios)}${precio}`)
+        encoder.text(`${cant}${nombre}${subtotal}`)
                .newline();
     });
 
     encoder.text(SEPARATOR).newline();
 
-    // 4. TOTALES (Neto e IVA a la izquierda como pediste)
+    // 6. SUBTOTALES (alineados a la izquierda)
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
 
-    // Alineación Izquierda Pura (Full Left)
-    encoder.align('left');
-    encoder.text(`Neto: ${formatCLP(neto)}`).newline();
-    encoder.text(`IVA:  ${formatCLP(iva)}`).newline();
-    
-    encoder.newline();
+    encoder.align('left')
+           .text(`Neto:  ${formatCLP(neto)}`)
+           .newline()
+           .text(`IVA:   ${formatCLP(iva)}`)
+           .newline(2);
 
-    // 5. TOTAL FINAL (Arreglado para que no se corte)
-    // Usamos align right y negrita, pero SIN width(2) si el número es muy grande
-    // O probamos con width(2) pero asegurando espacio.
-    
+    // 7. TOTAL (grande pero controlado)
     encoder.align('right')
            .bold(true)
-           .width(2)      // Doble Ancho
-           .height(2);    // Doble Alto
-    
-    // Si el total es muy largo (ej: $ 10.000.000), el width(2) lo romperá.
-    // Hack: Si es muy largo, bajamos a width(1)
-    const textoTotal = `TOTAL: ${formatCLP(total)}`;
-    
-    if (textoTotal.length > 12) { // 12 chars * 2 ancho = 24 chars (mitad de linea)
-        encoder.width(1); // Achicamos si es millonario
-    }
-
-    encoder.text(textoTotal)
-           .width(1)  // Reset Ancho
-           .height(1) // Reset Alto
+           .size('big') // Usa el método size() en vez de width/height manual
+           .text(`TOTAL: ${formatCLP(total)}`)
+           .size('normal') // Reset inmediato
            .bold(false)
-           .newline()
-           .newline();
+           .newline(2);
 
-    // 6. TIMBRE PDF417
+    // 8. TIMBRE PDF417
     if (timbreXml) {
         try {
-            const imgObj = await generatePdf417Web(timbreXml);
-            if (imgObj) {
-                encoder.align('center')
-                       .image(imgObj, 300, 100, 'threshold')
-                       .newline()
-                       // Texto legal SIEMPRE va en fuente pequeña (Font B)
-                       .raw(CMD_FONT_B) 
-                       .text('Timbre Electronico SII')
-                       .newline()
-                       .text('Verifique en www.sii.cl')
-                       .newline()
-                       .raw(CMD_FONT_A); // Volver a normal por si acaso
+            // Extraer el TED del XML completo
+            const tedContent = extraerTedDelXml(timbreXml);
+            
+            if (tedContent) {
+                // Generar imagen base64
+                const imgBase64 = await generarPdf417Base64(tedContent);
+                
+                if (imgBase64) {
+                    // Convertir base64 a Image object
+                    const img = new Image();
+                    img.src = imgBase64;
+                    
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                    });
+
+                    // Imprimir imagen centrada
+                    encoder.align('center')
+                           .image(img, 384, 150, 'atkinson') // 384px = ancho óptimo para 80mm
+                           .newline()
+                           .size('small')
+                           .text('Timbre Electrónico SII')
+                           .newline()
+                           .text('Verifique en www.sii.cl')
+                           .size('normal')
+                           .newline();
+                } else {
+                    console.warn('No se pudo generar imagen PDF417');
+                }
+            } else {
+                console.warn('No se pudo extraer TED del XML');
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error('Error generando timbre:', e);
+        }
     } else {
-        // Mensaje si no hay timbre (para pruebas)
         encoder.align('center')
                .text('(Sin Timbre - Modo Prueba)')
                .newline();
     }
 
-    // 7. CORTE
-    encoder.newline().newline().newline();
-    encoder.cut();
+    // 9. CIERRE Y CORTE
+    encoder.newline(3)
+           .cut('partial'); // Corte parcial (menos desperdicio)
 
     return encoder.encode();
 }

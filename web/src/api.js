@@ -164,8 +164,6 @@ export async function uploadCafXml(empresaId, file) {
   form.append('file', file)
   form.append('empresa_id', empresaId)
 
-  // ERROR ERA AQUÍ: usabas axios.post
-  // CORRECCIÓN: usar api.post
   const { data } = await api.post('/folios/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
@@ -174,9 +172,14 @@ export async function uploadCafXml(empresaId, file) {
 }
 
 export async function getEmpresas() {
-  // ERROR ERA AQUÍ: usabas axios.get
-  // CORRECCIÓN: usar api.get
-  const { data } = await api.get('/empresas') // Ojo: verifica si tu ruta es singular o plural en el backend
+  const { data } = await api.get('/empresas')
   return data
 }
+
+// Nuevo: Listar CAFs cargados
+export async function getCafs() {
+  const { data } = await api.get('/folios')
+  return data
+}
+
 export { api }

@@ -270,6 +270,7 @@ async function checkout() {
     const session = JSON.parse(localStorage.getItem('session') || '{}');
     const user = currentUser.value || session.user || {};
     const empresa = session.empresa || {};
+    
     const payload = {
         id_usuario: user.id || 1, 
         id_empresa: user.id_empresa || 1,
@@ -285,50 +286,89 @@ async function checkout() {
     };
 
     try {
+        console.log('📤 Enviando venta al servidor...');
         const resp = await emitirVenta(payload);
-        const data = resp?.data ?? resp; // Manejar axios wrapper
+        const data = resp?.data ?? resp;
         
-        if (!data || !data.venta) throw new Error("Error: Respuesta inválida del servidor");
+        console.log('📦 Respuesta del servidor:', data);
+        
+        if (!data || !data.venta) {
+            throw new Error("Error: Respuesta inválida del servidor");
+        }
 
+        // Extraer datos de la respuesta
         const folioParaImprimir = data.folio || data.venta.id_venta || '---';
-        const timbreXml = data.timbre; // Puede ser null si falló el DTE
+        const timbreXml = data.timbre || null; // El TED completo para imprimir
 
-        console.log("🖨️ Imprimiendo Folio:", folioParaImprimir);
+        console.log(`🎫 Folio recibido: ${folioParaImprimir}`);
+        console.log(`🔏 ¿Tiene timbre?: ${timbreXml ? 'SÍ' : 'NO'}`);
 
+        // IMPRIMIR si está activado
         if (usarImpresora.value) {
-            const printDataObj = {
-                empresa: { razonSocial: empresa.nombre, rut: empresa.rut, direccion: empresa.direccion },
-                venta: { 
-                    folio: folioParaImprimir, // <--- VARIABLE CORRECTA
-                    id_venta: data.venta.id_venta, 
-                    fecha: new Date().toLocaleString() 
-                },
-                detalles: payload.detalles.map(d => ({ ...d, subtotal: d.cantidad * d.precio_unitario })),
-                total: total.value
-            };
-            
-            let rawBytes = null;
-            if (!isElectron) {
-                rawBytes = await generarTicketEscPos(printDataObj, timbreXml);
-            }
+            try {
+                const printDataObj = {
+                    empresa: { 
+                        razonSocial: empresa.nombre || 'Mi Empresa', 
+                        rut: empresa.rut || '12345678-9', 
+                        direccion: empresa.direccion || 'Sin dirección' 
+                    },
+                    venta: { 
+                        folio: folioParaImprimir,
+                        id_venta: data.venta.id_venta, 
+                        fecha: new Date().toLocaleString('es-CL') 
+                    },
+                    detalles: payload.detalles.map(d => ({ 
+                        ...d, 
+                        subtotal: d.cantidad * d.precio_unitario 
+                    })),
+                    total: total.value
+                };
+                
+                console.log('🖨️ Preparando impresión...');
+                
+                let rawBytes = null;
+                
+                // Generar bytes ESC/POS solo en web (no en Electron)
+                if (!isElectron) {
+                    const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
+                    rawBytes = await generarTicketEscPos(printDataObj, timbreXml);
+                }
 
-            await PrinterService.imprimir({
-                printerType: printerType.value,
-                printerVal: selectedUsbDevice.value,
-                ip: printerInfo.value.ip,
-                port: printerInfo.value.port,
-                dataObj: printDataObj, 
-                rawBytes: rawBytes,    
-                content417: timbreXml  
-            });
+                // Enviar a imprimir
+                await PrinterService.imprimir({
+                    printerType: printerType.value,
+                    printerVal: selectedUsbDevice.value,
+                    ip: printerInfo.value.ip,
+                    port: printerInfo.value.port,
+                    dataObj: printDataObj, 
+                    rawBytes: rawBytes,    
+                    content417: timbreXml  // El TED completo
+                });
+                
+                console.log('✅ Ticket impreso correctamente');
+                
+            } catch (printError) {
+                console.error('❌ Error al imprimir:', printError);
+                alert(`⚠️ Venta registrada pero falló la impresión: ${printError.message}`);
+            }
         }
         
+        // Limpiar carrito y mostrar éxito
         cart.value = [];
-        if(isElectron) alert(`Venta Finalizada. Folio: ${folioParaImprimir}`);
+        q.value = '';
+        
+        if (isElectron) {
+            alert(`✅ Venta Finalizada\nFolio: ${folioParaImprimir}`);
+        } else {
+            alert(`✅ Venta registrada exitosamente\nFolio: ${folioParaImprimir}`);
+        }
+        
+        // Recargar productos
+        search();
 
-    } catch (e) {
-        console.error(e);
-        alert('Error: ' + (e.message || e));
+    } catch (error) {
+        console.error('❌ Error en checkout:', error);
+        alert('❌ Error al procesar la venta: ' + (error.message || error));
     } finally {
         isLoading.value = false;
     }

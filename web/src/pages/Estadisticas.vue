@@ -33,7 +33,8 @@
     <div v-if="!hasAccess" class="flex-1 flex flex-col items-center justify-center text-center opacity-50">
         <div class="text-6xl mb-4">🔒</div>
         <h2 class="text-2xl font-bold">Requiere privilegios de Administrador</h2>
-        <p>Contacta al gerente para ver estas métricas.</p>
+        <p class="mt-2 text-[var(--text-secondary)]">Tu rol actual: <strong>{{ userRole }}</strong></p>
+        <p class="text-sm">Contacta al gerente para ver estas métricas.</p>
     </div>
 
     <div v-else class="flex-1 flex flex-col gap-6">
@@ -133,12 +134,10 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { api } from '../api'
 import { StatsUtils } from '../utils/StatsUtils'
-import { useAuth } from '../composables/useAuth'
-
-const { currentUser } = useAuth()
 
 // --- ESTADO ---
 const hasAccess = ref(false)
+const userRole = ref('cargando...')
 const isLoading = ref(false)
 const chartCanvas = ref(null)
 let chartInstance = null
@@ -169,96 +168,107 @@ const totalPeriodo = computed(() => ventasData.value.reduce((acc, v) => acc + v.
 // --- LOGICA ---
 
 function checkRole() {
-    console.log("Usuario actual:", currentUser.value); // <--- AGREGAR ESTO
-    
-    // Ajusta esto según cómo guardes el rol en tu objeto usuario
-    const rol = currentUser.value?.rol || 'vendedor';
-    
-    console.log("Rol detectado:", rol); // <--- Y ESTO
+    try {
+        const sessionStr = localStorage.getItem('session')
+        if (!sessionStr) {
+            console.error('No hay sesión en localStorage')
+            hasAccess.value = false
+            userRole.value = 'sin sesión'
+            return
+        }
 
-    if (rol === 'admin' || rol === 'analista') {
-        hasAccess.value = true;
-        loadData(); 
-    } else {
-        hasAccess.value = false;
+        const session = JSON.parse(sessionStr)
+        console.log('Sesión completa:', session)
+        
+        // Intenta diferentes ubicaciones posibles del rol
+        const rol = session.user?.rol || 
+                    session.user?.role || 
+                    session.rol || 
+                    session.role || 
+                    'vendedor'
+        
+        userRole.value = rol
+        console.log('Rol detectado:', rol)
+
+        // Compara en minúsculas para evitar problemas de mayúsculas
+        const rolLower = rol.toLowerCase()
+        if (rolLower === 'admin' || rolLower === 'administrador' || rolLower === 'analista') {
+            hasAccess.value = true
+            console.log('✅ Acceso concedido')
+            loadData()
+        } else {
+            hasAccess.value = false
+            console.log('❌ Acceso denegado para rol:', rol)
+        }
+    } catch (error) {
+        console.error('Error al verificar rol:', error)
+        hasAccess.value = false
+        userRole.value = 'error'
     }
 }
 
 function setRange(val) {
-    range.value = val;
-    modoCustom.value = false; // Desactivar modo custom al elegir rango rápido
-    loadData();
+    range.value = val
+    modoCustom.value = false
+    loadData()
 }
 
 async function aplicarFiltros() {
-    loadData();
+    loadData()
 }
 
 async function loadData() {
-    if (!hasAccess.value) return;
-    isLoading.value = true;
+    if (!hasAccess.value) return
+    isLoading.value = true
 
     try {
-        const session = JSON.parse(localStorage.getItem('session') || '{}');
-        const empresaId = session.user?.id_empresa || 1;
+        const session = JSON.parse(localStorage.getItem('session') || '{}')
+        const empresaId = session.user?.id_empresa || 1
 
         const params = {
             idEmpresa: empresaId,
             rango: range.value,
             categoria: filtroCategoria.value,
             marca: filtroMarca.value
-        };
-
-        // Si es custom, añadimos fechas
-        if (modoCustom.value && customStart.value && customEnd.value) {
-            params.inicio = customStart.value;
-            params.fin = customEnd.value;
-            // Quitamos rango predefinido para que el backend sepa que es custom
-            delete params.rango; 
         }
 
-        const res = await api.get('/estadisticas', { params });
-        const data = res.data ?? res;
+        if (modoCustom.value && customStart.value && customEnd.value) {
+            params.inicio = customStart.value
+            params.fin = customEnd.value
+            delete params.rango
+        }
 
-        ventasData.value = data.ventas_chart || [];
-        topProductos.value = data.top_productos || [];
+        const res = await api.get('/estadisticas', { params })
+        const data = res.data ?? res
+
+        ventasData.value = data.ventas_chart || []
+        topProductos.value = data.top_productos || []
         
-        // Llenar listas de filtros (solo la primera vez o siempre si quieres reactividad total)
-        if (data.categorias) listas.value.categorias = data.categorias;
-        if (data.marcas) listas.value.marcas = data.marcas;
+        if (data.categorias) listas.value.categorias = data.categorias
+        if (data.marcas) listas.value.marcas = data.marcas
 
-        drawChart();
+        drawChart()
 
     } catch (e) {
-        console.error("Error cargando stats:", e);
+        console.error("Error cargando stats:", e)
     } finally {
-        isLoading.value = false;
+        isLoading.value = false
     }
 }
 
 function drawChart() {
-    if (!chartCanvas.value) return;
-    const ctx = chartCanvas.value.getContext('2d');
-    // Usamos el Utils para renderizar
-    chartInstance = StatsUtils.renderChart(ctx, chartInstance, ventasData.value, chartType.value);
+    if (!chartCanvas.value) return
+    const ctx = chartCanvas.value.getContext('2d')
+    chartInstance = StatsUtils.renderChart(ctx, chartInstance, ventasData.value, chartType.value)
 }
 
 // Watchers
-watch(chartType, drawChart); // Redibujar si cambia el tipo de gráfico
+watch(chartType, drawChart)
 
 onMounted(() => {
-    // Intentar chequear inmediatamente
-    if (currentUser.value) {
-        checkRole();
-    }
-});
-
-// Agrega este watcher para reaccionar cuando el usuario cargue
-watch(currentUser, (newUser) => {
-    if (newUser) {
-        checkRole();
-    }
-});
+    console.log('🔍 Componente Estadísticas montado')
+    checkRole()
+})
 </script>
 
 <style scoped>
