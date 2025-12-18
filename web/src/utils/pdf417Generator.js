@@ -1,32 +1,36 @@
 import bwipjs from 'bwip-js';
 
 export async function generarPdf417Base64(tedXml) {
-    if (!tedXml || typeof tedXml !== 'string') {
-        console.warn('TED XML vacío o inválido');
-        return null;
-    }
+    if (!tedXml) return null;
     
     try {
-        const cleanData = tedXml.trim().replace(/\s+/g, ' ');
+        const cleanData = tedXml.trim();
+        
         const canvas = document.createElement('canvas');
         
         const options = {
             bcid: 'pdf417',
             text: cleanData,
-            eclevel: 5,        // Nivel de corrección de errores del SII
-            rowheight: 8,      // Altura de cada fila
-            scale: 3,          // Escala
+            
+            eclevel: 5,   
+
+            scale: 2, 
+            
+            rowheight: 3, 
+    
+            columns: 12,   
+            
             includetext: false,
-            paddingwidth: 8,   // Padding múltiplo de 8
-            paddingheight: 8
+            paddingwidth: 5,
+            paddingheight: 5
         };
         
+        // Renderizar en el canvas
         bwipjs.toCanvas(canvas, options);
-        const base64Image = canvas.toDataURL('image/png');
         
-        console.log(`PDF417 generado: ${canvas.width}x${canvas.height}px (ORIGINAL sin modificar)`);
+        console.log(`PDF417 Denso Generado: ${canvas.width}x${canvas.height}px`);
         
-        return base64Image;
+        return canvas.toDataURL('image/png');
         
     } catch (error) {
         console.error('Error generando PDF417:', error);
@@ -34,9 +38,6 @@ export async function generarPdf417Base64(tedXml) {
     }
 }
 
-/**
- * Extrae el TED del XML completo
- */
 export function extraerTedDelXml(xmlCompleto) {
     if (!xmlCompleto) return null;
     
