@@ -8,7 +8,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     // CAMBIO 1: Usamos 42 para que el "bloque" de texto se vea centrado visualmente.
     // Aunque la impresora soporte 48, 42 deja márgenes iguales a izquierda y derecha.
-    const WIDTH = 42; 
+    const WIDTH = 56; 
     const SEPARATOR = '-'.repeat(WIDTH);
 
     // Helpers manuales solo para el cuerpo de la boleta
