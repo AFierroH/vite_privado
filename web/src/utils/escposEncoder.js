@@ -6,138 +6,129 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new EscPosEncoder();
     
-    // AJUSTE PARA 80MM (48 caracteres)
-    const MAX_CHARS = 48; 
-    const SEPARATOR = '-'.repeat(MAX_CHARS);
+    // CAMBIO 1: Usamos 42 para que el "bloque" de texto se vea centrado visualmente.
+    // Aunque la impresora soporte 48, 42 deja márgenes iguales a izquierda y derecha.
+    const WIDTH = 42; 
+    const SEPARATOR = '-'.repeat(WIDTH);
+
+    // Helpers manuales solo para el cuerpo de la boleta
+    const centerText = (txt) => {
+        const str = String(txt || '').substring(0, WIDTH);
+        const padding = Math.max(0, Math.floor((WIDTH - str.length) / 2));
+        return ' '.repeat(padding) + str;
+    };
 
     // 1. INICIALIZACIÓN
-    encoder.initialize()
-           .codepage('cp858')
-           .align('center');
+    encoder.initialize().codepage('cp858').align('left');
 
-    // 2. ENCABEZADO (Corrección: Newline antes de quitar bold)
-    encoder.bold(true)
-           .size('normal')
-           .text(data.empresa.razonSocial || 'EMPRESA')
-           .newline() // <--- PRIMER FIX: Salto de línea antes de quitar bold
-           .bold(false);
-
-    encoder.text(`RUT: ${data.empresa.rut || '-'}`)
-           .newline()
-           .text((data.empresa.direccion || 'Temuco').substring(0, MAX_CHARS))
-           .newline(2);
+    // 2. ENCABEZADO (Centrado nativo funciona mejor para titulos)
+    encoder.align('center')
+           .bold(true).text(data.empresa.razonSocial || 'EMPRESA').bold(false).newline()
+           .text(`RUT: ${data.empresa.rut || '-'}`).newline()
+           .text((data.empresa.direccion || 'Temuco').substring(0, WIDTH)).newline(2)
+           .align('left'); // Volvemos a izquierda
 
     // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
     
-    encoder.align('left') 
-           .text(SEPARATOR).newline()
-           .bold(true).text(`BOLETA N: ${folioText}`).newline().bold(false) // Fix bold
-           .text(`FECHA: ${data.venta.fecha}`).newline()
-           .text(SEPARATOR).newline(2);
+    // Aquí usamos nuestros helpers para centrar el bloque de texto de 42 chars
+    encoder.text(centerText(SEPARATOR)).newline()
+           .align('center') // Centramos título de boleta
+           .bold(true).text(`BOLETA N: ${folioText}`).bold(false).newline()
+           .align('left')   // Volvemos
+           .text(centerText(`FECHA: ${data.venta.fecha}`)).newline()
+           .text(centerText(SEPARATOR)).newline(2);
 
-    // 4. PRODUCTOS
-    encoder.text('CANT DESCRIPCION'.padEnd(MAX_CHARS - 10) + 'TOTAL').newline()
+    // 4. PRODUCTOS (Calculados a mano sobre 42 chars para consistencia)
+    encoder.text('CANT DESCRIPCION'.padEnd(WIDTH - 10) + 'TOTAL').newline()
            .text(SEPARATOR).newline();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
         const precio = formatCLP(d.subtotal);
-
-        const espacioCant = 4; 
-        const espacioPrecio = precio.length;
-        const espacioNombre = MAX_CHARS - espacioCant - espacioPrecio - 1; 
         
-        let nombreStr = (d.nombre || '').substring(0, espacioNombre);
-        
-        const colCant = cant.padEnd(espacioCant, ' ');
-        const colNombre = nombreStr.padEnd(espacioNombre, ' ');
+        const colCantW = 4;
+        const colPrecioW = precio.length; 
+        const colNombreW = WIDTH - colCantW - colPrecioW - 1; 
 
-        encoder.text(`${colCant}${colNombre}${precio}`).newline();
+        let nombre = (d.nombre || '').substring(0, colNombreW);
+        const c = cant.padEnd(colCantW, ' ');
+        const n = nombre.padEnd(colNombreW, ' ');
+        
+        encoder.text(`${c}${n}${precio}`).newline();
     });
 
     encoder.text(SEPARATOR).newline();
 
-    // 5. TOTALES
+    // 5. TOTALES (AQUÍ ESTÁ LA MAGIA: ALINEACIÓN NATIVA)
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
     
-    encoder.align('left'); 
+    // CAMBIO 2: Usamos .align('right') REAL.
+    // Esto obliga a la impresora a pegar el texto al borde físico derecho.
+    encoder.align('right'); 
     
-    const txtNeto = `Neto: ${formatCLP(neto)}`;
-    const txtIva = `IVA:  ${formatCLP(iva)}`;
-    
-    encoder.text(txtNeto.padStart(MAX_CHARS)).newline()
-           .text(txtIva.padStart(MAX_CHARS)).newline(2);
+    encoder.text(`Neto: ${formatCLP(neto)}`).newline()
+           .text(`IVA:  ${formatCLP(iva)}`).newline();
 
-    // 6. TOTAL FINAL (CRÍTICO: AQUÍ ESTABA EL ERROR PRINCIPAL)
-    encoder.align('right')
-           .size('2x') 
+    // 6. TOTAL FINAL
+    encoder.size('2x') 
            .bold(true)
            .text(`TOTAL: ${formatCLP(total)}`)
-           .newline()      // <--- FIX CRÍTICO: Primero salto de línea...
-           .bold(false)    // ...luego quitamos negrita...
-           .size('normal') // ...luego tamaño normal.
-           .newline(1);    // Espacio extra
+           .newline()
+           .bold(false)
+           .size('normal')
+           .newline(1);
+    
+    encoder.align('left'); // Restaurar para lo que sigue
 
     // 7. TIMBRE PDF417
-    encoder.align('center'); 
-
     try {
         let imgSource = null;
-
-        if (preGeneratedImg) {
-             // Lógica legacy si la usaras
-             imgSource = preGeneratedImg.startsWith('data:') 
-                ? preGeneratedImg 
-                : `data:image/png;base64,${preGeneratedImg}`;
-        } 
-        else if (timbreXml) {
-            console.log("Generando imagen desde XML en Frontend");
+        if (timbreXml) {
+            console.log("Generando PDF417 denso...");
             const tedContent = extraerTedDelXml(timbreXml);
-            if (tedContent) {
-                imgSource = await generarPdf417Base64(tedContent);
-            }
+            if (tedContent) imgSource = await generarPdf417Base64(tedContent);
         }
 
         if (imgSource) {
             const img = new Image();
             img.src = imgSource;
-            
-            await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+            await new Promise((r) => { img.onload = r; img.onerror = r; });
 
-            // Fix Múltiplo de 8
-            const alignedWidth = Math.ceil(img.width / 8) * 8;
+            // Ancho físico para XPrinter 80mm
+            const printerWidthPx = 560; 
             const alignedHeight = Math.ceil(img.height / 8) * 8; 
 
             const canvas = document.createElement('canvas');
-            canvas.width = alignedWidth;
+            canvas.width = printerWidthPx; 
             canvas.height = alignedHeight;
             const ctx = canvas.getContext('2d');
+            
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, alignedWidth, alignedHeight);
-            ctx.drawImage(img, 0, 0);
+            ctx.fillRect(0, 0, printerWidthPx, alignedHeight);
+            
+            const xPos = (printerWidthPx - img.width) / 2;
+            ctx.drawImage(img, xPos, 0);
 
-            encoder.image(canvas, alignedWidth, alignedHeight, 'atkinson')
-                   .newline(); // El newline después de image es seguro
+            encoder.align('center')
+                   .image(canvas, printerWidthPx, alignedHeight, 'atkinson')
+                   .newline();
 
             encoder.size('small')
                    .text('Timbre Electronico SII').newline()
                    .text('Verifique en www.sii.cl').newline();
             
-            encoder.size('normal'); // Restaurar tamaño para el corte
+            encoder.size('normal');
         } else {
-            encoder.text('(Sin Timbre)').newline();
+            encoder.align('center').text('(Sin Timbre)').newline();
         }
 
     } catch (e) {
-        console.error(e);
         encoder.text('(Error Timbre)').newline();
     }
 
-    // 8. CORTE
     encoder.newline(4).cut();
-
     return encoder.encode();
 }
