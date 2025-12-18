@@ -6,6 +6,7 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new EscPosEncoder();
     
+    // AJUSTE PARA 80MM (48 caracteres)
     const MAX_CHARS = 48; 
     const SEPARATOR = '-'.repeat(MAX_CHARS);
 
@@ -14,13 +15,14 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
            .codepage('cp858')
            .align('center');
 
-    // 2. ENCABEZADO
+    // 2. ENCABEZADO (Corrección: Newline antes de quitar bold)
     encoder.bold(true)
            .size('normal')
            .text(data.empresa.razonSocial || 'EMPRESA')
-           .bold(false)
-           .newline()
-           .text(`RUT: ${data.empresa.rut || '-'}`)
+           .newline() // <--- PRIMER FIX: Salto de línea antes de quitar bold
+           .bold(false);
+
+    encoder.text(`RUT: ${data.empresa.rut || '-'}`)
            .newline()
            .text((data.empresa.direccion || 'Temuco').substring(0, MAX_CHARS))
            .newline(2);
@@ -30,7 +32,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     encoder.align('left') 
            .text(SEPARATOR).newline()
-           .bold(true).text(`BOLETA N: ${folioText}`).bold(false).newline()
+           .bold(true).text(`BOLETA N: ${folioText}`).newline().bold(false) // Fix bold
            .text(`FECHA: ${data.venta.fecha}`).newline()
            .text(SEPARATOR).newline(2);
 
@@ -56,6 +58,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
 
     encoder.text(SEPARATOR).newline();
 
+    // 5. TOTALES
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
@@ -68,23 +71,27 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     encoder.text(txtNeto.padStart(MAX_CHARS)).newline()
            .text(txtIva.padStart(MAX_CHARS)).newline(2);
 
-    // 6. TOTAL FINAL (Grande y centrado o a la derecha)
+    // 6. TOTAL FINAL (CRÍTICO: AQUÍ ESTABA EL ERROR PRINCIPAL)
     encoder.align('right')
            .size('2x') 
            .bold(true)
            .text(`TOTAL: ${formatCLP(total)}`)
-           .bold(false)
-           .size('normal') 
-           .newline(2);
+           .newline()      // <--- FIX CRÍTICO: Primero salto de línea...
+           .bold(false)    // ...luego quitamos negrita...
+           .size('normal') // ...luego tamaño normal.
+           .newline(1);    // Espacio extra
 
     // 7. TIMBRE PDF417
-    encoder.align('center'); // Centramos para el código
+    encoder.align('center'); 
 
     try {
         let imgSource = null;
 
         if (preGeneratedImg) {
-            // ... (logica anterior)
+             // Lógica legacy si la usaras
+             imgSource = preGeneratedImg.startsWith('data:') 
+                ? preGeneratedImg 
+                : `data:image/png;base64,${preGeneratedImg}`;
         } 
         else if (timbreXml) {
             console.log("Generando imagen desde XML en Frontend");
@@ -112,18 +119,20 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             ctx.fillRect(0, 0, alignedWidth, alignedHeight);
             ctx.drawImage(img, 0, 0);
 
-            encoder.image(canvas, alignedWidth, alignedHeight, 'atkinson').newline();
+            encoder.image(canvas, alignedWidth, alignedHeight, 'atkinson')
+                   .newline(); // El newline después de image es seguro
 
             encoder.size('small')
                    .text('Timbre Electronico SII').newline()
                    .text('Verifique en www.sii.cl').newline();
             
-            encoder.size('normal');
+            encoder.size('normal'); // Restaurar tamaño para el corte
         } else {
             encoder.text('(Sin Timbre)').newline();
         }
 
     } catch (e) {
+        console.error(e);
         encoder.text('(Error Timbre)').newline();
     }
 
