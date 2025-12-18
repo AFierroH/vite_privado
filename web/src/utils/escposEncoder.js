@@ -73,18 +73,19 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     try {
         let imgSource = null;
 
-        // Prioridad 1: Imagen del servidor
+        // Si el backend manda imagen, la usamos (pero ahora mandará null)
         if (preGeneratedImg) {
             console.log("Usando imagen del servidor");
             imgSource = preGeneratedImg.startsWith('data:') 
                 ? preGeneratedImg 
                 : `data:image/png;base64,${preGeneratedImg}`;
         } 
-        // Prioridad 2: Generar desde XML
+        // Generar desde XML (ESTO ES LO QUE SE EJECUTARÁ AHORA)
         else if (timbreXml) {
-            console.log("Generando imagen desde XML");
+            console.log("Generando imagen desde XML en Frontend");
             const tedContent = extraerTedDelXml(timbreXml);
             if (tedContent) {
+                // Generamos la imagen base (posiblemente de 63px de alto)
                 imgSource = await generarPdf417Base64(tedContent);
             }
         }
@@ -98,21 +99,30 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
                 img.onerror = reject;
             });
 
-            console.log(`Imagen PDF417 original: ${img.width}x${img.height}px`);
+            // --- AQUÍ ESTÁ LA MAGIA QUE FALTA EN TU FRONTEND ---
+            // Calculamos múltiplos de 8 para ANCHO y ALTO
+            const alignedWidth = Math.ceil(img.width / 8) * 8;
+            const alignedHeight = Math.ceil(img.height / 8) * 8; // Convierte 63 -> 64
 
-            // CRITICAL: Usar ancho múltiplo de 8 PARA IMPRESIÓN, no para modificar imagen
-            // Calculamos el ancho más cercano que sea múltiplo de 8
-            const targetWidth = Math.ceil(img.width / 8) * 8;
-            
-            // Si el ancho original no es múltiplo de 8, usamos el siguiente múltiplo
-            // La librería esc-pos-encoder internamente ajustará la imagen
-            const printWidth = targetWidth;
-            
-            console.log(`Imprimiendo con ancho: ${printWidth}px (múltiplo de 8)`);
+            console.log(`Redimensionando Timbre: ${img.width}x${img.height} -> ${alignedWidth}x${alignedHeight}`);
 
-            // La librería manejará internamente el ajuste sin modificar el código de barras
-            encoder.image(img, printWidth, img.height, 'atkinson')
+            // Crear canvas con dimensiones correctas
+            const canvas = document.createElement('canvas');
+            canvas.width = alignedWidth;
+            canvas.height = alignedHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Rellenar de blanco (importante)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, alignedWidth, alignedHeight);
+
+            // Dibujar imagen original
+            ctx.drawImage(img, 0, 0);
+
+            // Pasar el CANVAS al encoder (no la img original)
+            encoder.image(canvas, alignedWidth, alignedHeight, 'atkinson')
                    .newline();
+            // ---------------------------------------------------
 
             encoder.size('small')
                    .text('Timbre Electronico SII').newline()
@@ -120,13 +130,12 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             
             encoder.size('normal');
         } else {
-            console.warn('Sin timbre disponible');
             encoder.text('(Sin Timbre)').newline();
         }
 
     } catch (e) {
         console.error('Error procesando timbre:', e);
-        encoder.text('(Error Timbre: ' + e.message + ')').newline();
+        encoder.text('(Error Timbre)').newline();
     }
 
     // 8. CORTE
