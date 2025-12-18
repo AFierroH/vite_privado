@@ -3,18 +3,16 @@ import { generarPdf417Base64, extraerTedDelXml } from './pdf417Generator';
 
 const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 
-// AHORA RECIBE 3 ARGUMENTOS: data, timbreXml, preGeneratedImg
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new EscPosEncoder();
     
-    // Configuración para 80mm
     const MAX_CHARS = 42; 
     const SEPARATOR = '-'.repeat(MAX_CHARS);
 
     // 1. INICIALIZACIÓN
     encoder.initialize().codepage('cp858');
 
-    // 2. ENCABEZADO EMPRESA
+    // 2. ENCABEZADO
     encoder.align('center')
            .bold(true)
            .size('normal')
@@ -26,7 +24,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
            .text(data.empresa.direccion || 'Temuco')
            .newline(2);
 
-    // 3. DATOS VENTA
+    // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
     encoder.align('left')
            .text(SEPARATOR).newline()
@@ -34,7 +32,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
            .text(`FECHA: ${data.venta.fecha}`).newline()
            .text(SEPARATOR).newline(2);
 
-    // 4. DETALLES
+    // 4. PRODUCTOS
     encoder.text('CANT DESCRIPCION               TOTAL').newline()
            .text(SEPARATOR).newline();
 
@@ -52,80 +50,86 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
 
     encoder.text(SEPARATOR).newline();
 
-    // 6. TOTALES
+    // 5. TOTALES
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
-    const txtNeto = `Neto: ${formatCLP(neto)}`;
-    const txtIva  = `IVA:  ${formatCLP(iva)}`;
     
-    encoder.text(txtNeto.padStart(MAX_CHARS)).newline()
-           .text(txtIva.padStart(MAX_CHARS)).newline(2);
+    encoder.align('left')
+           .text(`Neto: ${formatCLP(neto)}`.padStart(MAX_CHARS)).newline()
+           .text(`IVA:  ${formatCLP(iva)}`.padStart(MAX_CHARS)).newline(2);
 
-    // 7. TOTAL FINAL (Con fix de fuentes)
-    encoder.align('right');
-    encoder.newline(); // <--- FIX IMPORTANTE
-    encoder.bold(true)
-           .size('normal')
+    // 6. TOTAL
+    encoder.align('right')
+           .newline()
+           .bold(true)
            .text(`TOTAL: ${formatCLP(total)}`)
            .bold(false)
            .newline(2);
 
-    // ==========================================
-    // 8. LOGICA DEL TIMBRE (LA PARTE QUE FALLABA)
-    // ==========================================
+    // 7. TIMBRE PDF417 - SOLUCIÓN CORRECTA
     encoder.align('center');
 
     try {
         let imgSource = null;
 
-        // PRIORIDAD 1: ¿El backend nos mandó la imagen lista?
+        // Prioridad 1: Imagen del servidor
         if (preGeneratedImg) {
-            console.log("Usando imagen enviada por el servidor");
-            // Si viene sin cabecera data:image, se la ponemos
+            console.log("Usando imagen del servidor");
             imgSource = preGeneratedImg.startsWith('data:') 
                 ? preGeneratedImg 
                 : `data:image/png;base64,${preGeneratedImg}`;
         } 
-        // PRIORIDAD 2: ¿Tenemos XML para generarla nosotros?
+        // Prioridad 2: Generar desde XML
         else if (timbreXml) {
-            console.log("Generando imagen localmente desde XML");
+            console.log("Generando imagen desde XML");
             const tedContent = extraerTedDelXml(timbreXml);
             if (tedContent) {
                 imgSource = await generarPdf417Base64(tedContent);
             }
         }
 
-        // SI TENEMOS ALGUNA IMAGEN (Del server o generada), IMPRIMIRLA
         if (imgSource) {
             const img = new Image();
             img.src = imgSource;
-
+            
             await new Promise((resolve, reject) => {
                 img.onload = resolve;
                 img.onerror = reject;
             });
 
-            // Imprimir la imagen (300px ancho seguro)
-            encoder.image(img, 300, 120, 'atkinson').newline();
+            console.log(`Imagen PDF417 original: ${img.width}x${img.height}px`);
 
-            // Texto legal bajo el timbre
+            // CRITICAL: Usar ancho múltiplo de 8 PARA IMPRESIÓN, no para modificar imagen
+            // Calculamos el ancho más cercano que sea múltiplo de 8
+            const targetWidth = Math.ceil(img.width / 8) * 8;
+            
+            // Si el ancho original no es múltiplo de 8, usamos el siguiente múltiplo
+            // La librería esc-pos-encoder internamente ajustará la imagen
+            const printWidth = targetWidth;
+            
+            console.log(`Imprimiendo con ancho: ${printWidth}px (múltiplo de 8)`);
+
+            // La librería manejará internamente el ajuste sin modificar el código de barras
+            encoder.image(img, printWidth, img.height, 'atkinson')
+                   .newline();
+
             encoder.size('small')
                    .text('Timbre Electronico SII').newline()
                    .text('Verifique en www.sii.cl').newline();
             
-            encoder.size('normal'); // Reset
+            encoder.size('normal');
         } else {
-            // Si fallaron ambas opciones
+            console.warn('Sin timbre disponible');
             encoder.text('(Sin Timbre)').newline();
         }
 
     } catch (e) {
-        console.error("Error al procesar imagen timbre:", e);
-        encoder.text('(Error Timbre)').newline();
+        console.error('Error procesando timbre:', e);
+        encoder.text('(Error Timbre: ' + e.message + ')').newline();
     }
 
-    // 9. CORTE
+    // 8. CORTE
     encoder.newline(3).cut('partial');
 
     return encoder.encode();
