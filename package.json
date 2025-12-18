@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@point-of-sale/receipt-printer-encoder": "^3.0.3",
     "html5-qrcode": "^2.3.8"
   }
 }
