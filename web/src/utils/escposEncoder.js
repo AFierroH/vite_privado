@@ -6,69 +6,76 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
-    // --- CONSTANTES FÍSICAS (NO TOCAR) ---
+    // --- CONSTANTES FÍSICAS ---
     const PRINTER_WIDTH_PX = 576; // 72mm reales
-    const CHAR_WIDTH_PX = 12;     // Ancho de 1 caracter Font A standard
+    const CHAR_WIDTH_PX = 12;     // Ancho Font A
     
-    // Usamos 46 chars para la línea de seguridad (evita wraps accidentales)
-    const SAFE_WIDTH = 46; 
+    // Bajamos a 44 guiones para que se vea bien centrado y con margen seguro
+    const SAFE_WIDTH = 44; 
     const SEPARATOR = '-'.repeat(SAFE_WIDTH);
 
-    // --- HELPERS DE POSICIONAMIENTO ABSOLUTO (MAGIA PURA) ---
+    // --- HELPERS DE POSICIONAMIENTO (CORREGIDOS) ---
     
-    // Mover cursor a una posición X absoluta
     const moveCursor = (pos) => {
         const nL = pos % 256;
         const nH = Math.floor(pos / 256);
-        return [0x1B, 0x24, nL, nH]; // ESC $ nL nH
+        return [0x1B, 0x24, nL, nH]; // ESC $
     };
 
-    // Imprimir CENTRADO matemáticamente
+    // Imprimir CENTRADO (Estilo -> Movimiento -> Texto)
     const printCentered = (text, isBold = false) => {
         const txtStr = String(text);
-        // Calculamos ancho en píxeles del texto
-        const textLenPx = txtStr.length * CHAR_WIDTH_PX * (isBold ? 1 : 1); // Asumimos mismo ancho bold/normal en Font A
+        const textLenPx = txtStr.length * CHAR_WIDTH_PX;
         const pos = Math.max(0, Math.floor((PRINTER_WIDTH_PX - textLenPx) / 2));
         
-        encoder.raw(moveCursor(pos));
+        // 1. Estilo
         if(isBold) encoder.bold(true);
+        
+        // 2. Movimiento (ESC $)
+        encoder.raw(moveCursor(pos));
+        
+        // 3. Texto
         encoder.text(txtStr);
-        if(isBold) encoder.bold(false);
+        
+        // 4. Salto de línea
         encoder.newline();
+        
+        // 5. Reset Estilo (Después del salto para evitar errores)
+        if(isBold) encoder.bold(false);
     };
 
-    // Imprimir DERECHA matemáticamente
+    // Imprimir DERECHA (Estilo -> Movimiento -> Texto)
     const printRight = (text, isBold = false) => {
         const txtStr = String(text);
         const textLenPx = txtStr.length * CHAR_WIDTH_PX;
         const pos = PRINTER_WIDTH_PX - textLenPx;
         
-        encoder.raw(moveCursor(pos));
         if(isBold) encoder.bold(true);
+        encoder.raw(moveCursor(pos));
         encoder.text(txtStr);
-        if(isBold) encoder.bold(false);
         encoder.newline();
+        if(isBold) encoder.bold(false);
     };
 
-    // Imprimir COLUMNAS (Izq......Der)
+    // Imprimir DOS COLUMNAS (Izq...Der)
     const printSplit = (left, right) => {
-        // Imprimir Izquierda (normal)
+        // Izquierda (Posición 0)
         encoder.raw(moveCursor(0)).text(left);
         
-        // Imprimir Derecha (calculado)
+        // Derecha (Calculado)
         const rightLenPx = String(right).length * CHAR_WIDTH_PX;
         const pos = PRINTER_WIDTH_PX - rightLenPx;
         
         encoder.raw(moveCursor(pos)).text(right).newline();
     };
 
-
     // =================================================================
     // 1. INICIALIZACIÓN
     // =================================================================
     encoder
         .initialize()           
-        .codepage('cp858');
+        .codepage('cp858')
+        .align('left'); // <--- CRÍTICO: Obligatorio para que ESC $ funcione bien
 
     // Configuración Hardware
     encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // GS L 0
@@ -76,40 +83,38 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
 
     // =================================================================
 
-    // 2. ENCABEZADO (Full Manual Centering)
+    // 2. ENCABEZADO
     printCentered(data.empresa.razonSocial || 'EMPRESA', true);
     printCentered(`RUT: ${data.empresa.rut || '-'}`);
-    printCentered((data.empresa.direccion || 'Temuco').substring(0, 48));
+    // Cortamos dirección a 40 chars para asegurar centrado
+    printCentered((data.empresa.direccion || 'Temuco').substring(0, 40));
     encoder.newline();
 
     // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
     
-    printCentered(SEPARATOR); // Línea centrada perfecta
+    printCentered(SEPARATOR);
     printCentered(`BOLETA N: ${folioText}`, true);
-    encoder.raw(moveCursor(0)).text(`FECHA: ${data.venta.fecha}`).newline(); // Fecha a la izquierda
+    encoder.raw(moveCursor(0)).text(`FECHA: ${data.venta.fecha}`).newline();
     printCentered(SEPARATOR);
     encoder.newline();
 
-    // 4. PRODUCTOS (Cabecera manual)
-    // "CANT DESCRIPCION" a la izq, "TOTAL" a la der
+    // 4. PRODUCTOS
     printSplit('CANT DESCRIPCION', 'TOTAL');
     printCentered(SEPARATOR);
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
         const precio = formatCLP(d.subtotal);
-        const nombre = (d.nombre || '').substring(0, 25); // Cortamos nombre por seguridad
+        const nombre = (d.nombre || '').substring(0, 22); // Nombre más corto para seguridad
 
-        // Formato: "1   Coca Cola"
         const leftPart = `${cant.padEnd(4)} ${nombre}`;
-        
         printSplit(leftPart, precio);
     });
 
     printCentered(SEPARATOR);
 
-    // 5. TOTALES (Usando printSplit para alinear extremos)
+    // 5. TOTALES
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
@@ -119,15 +124,22 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     encoder.newline();
 
-    // TOTAL FINAL GRANDE
-    // Truco: Para size 2x, el ancho del caracter es 24px (12*2)
+    // TOTAL FINAL (Aquí estaba el error "middle of line")
     const txtTotal = `TOTAL: ${formatCLP(total)}`;
+    // En size 2x, cada caracter ocupa el doble (24px)
     const totalLenPx = txtTotal.length * (CHAR_WIDTH_PX * 2); 
     const posTotal = PRINTER_WIDTH_PX - totalLenPx;
 
-    encoder.raw(moveCursor(posTotal))
-           .size('2x').bold(true).text(txtTotal).bold(false).size('normal')
-           .newline(2);
+    // CORRECCIÓN: Size -> Bold -> Move -> Text -> Newline -> Reset
+    encoder
+        .size('2x')       // 1. Tamaño
+        .bold(true)       // 2. Negrita
+        .raw(moveCursor(posTotal)) // 3. Posición (ESC $)
+        .text(txtTotal)   // 4. Texto
+        .newline()        // 5. Salto (Consolida la línea)
+        .bold(false)      // 6. Reset
+        .size('normal')   // 7. Reset
+        .newline(1);
 
     // 6. TIMBRE
     try {
@@ -144,7 +156,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             img.src = imgSource;
             await new Promise(r => { img.onload = r; img.onerror = r; });
 
-            // Imagen centrada a 576px
+            // Centrar imagen manualmente
             const canvas = document.createElement('canvas');
             canvas.width = 576;
             canvas.height = Math.ceil(img.height / 8) * 8;
@@ -152,17 +164,23 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, 576, canvas.height);
-            // Centrar horizontalmente
             ctx.drawImage(img, (576 - img.width) / 2, 0);
 
-            encoder.image(canvas, 576, canvas.height, 'atkinson').newline();
+            // Centramos la imagen usando el método de la librería (aquí es seguro)
+            encoder.align('center')
+                   .image(canvas, 576, canvas.height, 'atkinson')
+                   .newline();
             
+            // Texto del timbre centrado manualmente para ser consistentes
+            encoder.align('left'); // Volvemos a left para usar printCentered
             printCentered('Timbre Electronico SII');
             printCentered('Verifique en www.sii.cl');
         } else {
+            encoder.align('left');
             printCentered('(Sin Timbre)');
         }
     } catch (e) {
+        encoder.align('left');
         printCentered('(Error Timbre)');
     }
 
