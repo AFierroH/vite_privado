@@ -6,11 +6,13 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
-    // --- FÍSICA: 576px / 12px = 48 Caracteres Máximos ---
-    const PRINTER_WIDTH_PX = 576; 
+    // --- AJUSTE DE SEGURIDAD ---
+    // Bajamos de 576 a 550 para evitar que el borde derecho toque el límite 
+    // y provoque el salto de línea automático.
+    const PRINTER_WIDTH_PX = 550; 
     const CHAR_WIDTH_PX = 12;     
 
-    // --- HELPERS (LA MAGIA DE TU CÓDIGO) ---
+    // --- HELPERS (ESC $) ---
 
     const moveCursor = (pos) => {
         const nL = pos % 256;
@@ -18,27 +20,21 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         return [0x1B, 0x24, nL, nH]; 
     };
 
-    // 1. DOS COLUMNAS MATEMÁTICAS (LA QUE FUNCIONA)
-    const printSplitPrecision = (left, right) => {
+    // 1. SEPARADOR DIVIDIDO (Con margen de seguridad)
+    // 20 guiones por lado = 40 total. Suficiente para verse completo.
+    const printSeparatorSplit = () => {
+        const half = '-'.repeat(20);
+        
         // Izquierda: Pixel 0
-        encoder.raw(moveCursor(0)).text(left);
+        encoder.raw(moveCursor(0)).text(half);
         
-        // Derecha: Pixel calculado
-        const strRight = String(right);
-        const posRight = PRINTER_WIDTH_PX - (strRight.length * CHAR_WIDTH_PX);
-        
-        encoder.raw(moveCursor(posRight)).text(strRight).newline();
+        // Derecha: Pixel 550 - AnchoTexto
+        // Al usar 550, aseguramos que no toque el borde físico
+        const posRight = PRINTER_WIDTH_PX - (half.length * CHAR_WIDTH_PX);
+        encoder.raw(moveCursor(posRight)).text(half).newline();
     };
 
-    // 2. SEPARADOR "DIVIDE Y VENCERÁS"
-    // Usamos la misma función de arriba. 
-    // 22 guiones a la izq, 22 a la der. Total 44. (Margen seguro de 4 espacios)
-    const printSeparatorSafe = () => {
-        const half = '-'.repeat(22);
-        printSplitPrecision(half, half);
-    };
-
-    // 3. DERECHA EXACTA (Para Totales)
+    // 2. DERECHA EXACTA (Neto, IVA, Total)
     const printRightPrecision = (text, isBold = false) => {
         const str = String(text);
         const textLen = str.length * CHAR_WIDTH_PX;
@@ -49,7 +45,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         if(isBold) encoder.bold(false);
     };
 
-    // 4. CENTRADO EXACTO
+    // 3. CENTRADO
     const printCenteredPrecision = (text, isBold = false) => {
         const str = String(text).trim();
         const textLen = str.length * CHAR_WIDTH_PX;
@@ -60,52 +56,61 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         if(isBold) encoder.bold(false);
     };
 
+    // 4. PRODUCTOS (Dos columnas)
+    const printSplitPrecision = (left, right) => {
+        encoder.raw(moveCursor(0)).text(left);
+        
+        const strRight = String(right);
+        const posRight = PRINTER_WIDTH_PX - (strRight.length * CHAR_WIDTH_PX);
+        
+        encoder.raw(moveCursor(posRight)).text(strRight).newline();
+    };
+
     // =================================================================
     // 1. INICIALIZACIÓN
     // =================================================================
     encoder
         .initialize()
         .codepage('cp858')
-        .align('left'); // Base izquierda obligatoria
+        .align('left'); 
 
-    // Hacks de Hardware
+    // Hardware Init
     encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // GS L 0
-    encoder.raw([0x1d, 0x57, 0x40, 0x02]); // GS W 576
+    encoder.raw([0x1d, 0x57, 0x40, 0x02]); // GS W 576 (Configuramos full, pero usamos 550 lógico)
 
     // =================================================================
 
     // 2. ENCABEZADO
     printCenteredPrecision(data.empresa.razonSocial || 'EMPRESA', true);
     printCenteredPrecision(`RUT: ${data.empresa.rut || '-'}`);
-    // Recortamos a 48 chars
-    printCenteredPrecision((data.empresa.direccion || 'Temuco').substring(0, 48));
+    printCenteredPrecision((data.empresa.direccion || 'Temuco').substring(0, 45));
     encoder.newline();
 
     // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
     
-    printSeparatorSafe(); // <--- EL SEPARADOR NUEVO
+    printSeparatorSplit(); // <--- USA 550px
     printCenteredPrecision(`BOLETA N: ${folioText}`, true);
     encoder.raw(moveCursor(0)).text(`FECHA: ${data.venta.fecha}`).newline();
-    printSeparatorSafe();
+    printSeparatorSplit();
     encoder.newline();
 
     // 4. PRODUCTOS
     printSplitPrecision('CANT DESCRIPCION', 'TOTAL');
-    printSeparatorSafe();
+    printSeparatorSplit();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
         const precio = formatCLP(d.subtotal);
-        const nombre = (d.nombre || '').substring(0, 25);
+        const nombre = (d.nombre || '').substring(0, 22);
         
         const leftPart = `${cant.padEnd(4)} ${nombre}`;
         printSplitPrecision(leftPart, precio);
     });
 
-    printSeparatorSafe();
+    printSeparatorSplit();
 
-    // 5. TOTALES (Neto/IVA a la derecha)
+    // 5. TOTALES
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
@@ -115,7 +120,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     encoder.newline();
 
-    // 6. TOTAL FINAL (Normal, Bold, Derecha Precisa)
+    // 6. TOTAL FINAL
     printRightPrecision(`TOTAL: ${formatCLP(total)}`, true);
 
     // 7. TIMBRE
@@ -141,6 +146,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, 576, canvas.height);
+            // Centramos en 576 aunque usemos 550 para texto (imágenes son aparte)
             ctx.drawImage(img, (576 - img.width) / 2, 0);
 
             encoder.align('center') 
