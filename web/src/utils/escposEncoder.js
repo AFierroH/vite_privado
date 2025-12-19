@@ -11,7 +11,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const CHAR_WIDTH_PX = 12;     // Ancho Font A
     
     // Bajamos a 44 guiones para que se vea bien centrado y con margen seguro
-    const SAFE_WIDTH = 44; 
+    const SAFE_WIDTH = 48; 
     const SEPARATOR = '-'.repeat(SAFE_WIDTH);
 
     // --- HELPERS DE POSICIONAMIENTO (CORREGIDOS) ---
@@ -124,23 +124,21 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     encoder.newline();
 
-    // TOTAL FINAL (Aquí estaba el error "middle of line")
     const txtTotal = `TOTAL: ${formatCLP(total)}`;
-    // En size 2x, cada caracter ocupa el doble (24px)
-    const totalLenPx = txtTotal.length * (CHAR_WIDTH_PX * 2); 
+    
+    // Cálculo especial: 24px por letra (12px * 2 de escala)
+    const totalLenPx = txtTotal.length * 24; 
     const posTotal = PRINTER_WIDTH_PX - totalLenPx;
 
-    // CORRECCIÓN: Size -> Bold -> Move -> Text -> Newline -> Reset
     encoder
-        .size('2x')       // 1. Tamaño
-        .bold(true)       // 2. Negrita
-        .raw(moveCursor(posTotal)) // 3. Posición (ESC $)
-        .text(txtTotal)   // 4. Texto
-        .newline()        // 5. Salto (Consolida la línea)
-        .bold(false)      // 6. Reset
-        .size('normal')   // 7. Reset
+        .size('2x')       // 1. Activar Tamaño Gigante
+        .bold(true)       // 2. Activar Negrita
+        .raw(moveCursor(posTotal)) // 3. Mover cursor al punto exacto
+        .text(txtTotal)   // 4. Escribir
+        .newline()        // 5. Saltar línea
+        .bold(false)      // 6. Resetear Negrita
+        .size('normal')   // 7. Resetear Tamaño
         .newline(1);
-
     // 6. TIMBRE
     try {
         let imgSource = null;
