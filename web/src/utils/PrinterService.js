@@ -1,4 +1,3 @@
-// src/utils/PrinterService.js
 import qz from 'qz-tray';
 import { sha256 } from 'js-sha256';
 
@@ -14,7 +13,6 @@ if (!isElectron) {
 }
 
 export const PrinterService = {
-    // 1. LISTAR
     async listarUSB() {
         if (isElectron) {
             try {
@@ -25,27 +23,20 @@ export const PrinterService = {
             try {
                 const devices = await navigator.usb.getDevices();
                 const myPrinters = devices.filter(d => d.vendorId === MY_VID && d.productId === MY_PID);
-                if (myPrinters.length > 0) {
-                    return myPrinters.map((d, i) => ({ name: `XPrinter WebUSB #${i+1}`, val: d, type: 'WEBUSB' }));
-                } else {
-                    return [{ name: "Click para Conectar (WebUSB)", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
-                }
+                return myPrinters.length > 0 
+                    ? myPrinters.map((d, i) => ({ name: `XPrinter WebUSB #${i+1}`, val: d, type: 'WEBUSB' }))
+                    : [{ name: "Click para Conectar (WebUSB)", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
             } catch (e) { return []; }
         }
     },
-
-    // 2. REQUEST
     async requestWebUsb() {
         try {
             const device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
             return { name: "XPrinter Conectada", val: device, type: 'WEBUSB' };
         } catch (e) { return null; }
     },
-
-    // 3. IMPRIMIR (FIX CLONE ERROR)
-        async imprimir(params) {
-        
-        // A: ELECTRON
+    async imprimir(params) {
+        // MODO ELECTRON (Limpiamos payload)
         if (isElectron) {
             const payload = {
                 printerType: params.printerType,
@@ -53,59 +44,30 @@ export const PrinterService = {
                 pid: params.printerVal?.pid,
                 ip: params.ip,
                 port: params.port,
-                rawBytes: Array.from(params.rawBytes || []) 
+                rawBytes: Array.from(params.rawBytes || []) // Conversión crítica
             };
-            
-            if (payload.rawBytes.length === 0) {
-                console.error("ERROR: rawBytes está vacío. Revisa Ventas.vue");
-            }
-
             return await window.electronAPI.printRaw(payload);
         }
-
-        // B: WEB - RED LAN (QZ Tray)
+        // MODO WEB LAN
         if (params.printerType === 'lan') {
             if (!qz.websocket.isActive()) await qz.websocket.connect();
-            
             const bytes = new Uint8Array(params.rawBytes);
             let binary = '';
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
             const base64Data = window.btoa(binary);
-
             const config = qz.configs.create({ host: params.ip, port: params.port });
-            const data = [{ 
-                type: 'raw', 
-                format: 'command', 
-                flavor: 'base64', 
-                data: base64Data 
-            }];
-            
+            const data = [{ type: 'raw', format: 'command', flavor: 'base64', data: base64Data }];
             return await qz.print(config, data);
         }
-
-        // C: WEB - USB
+        // MODO WEB USB
         if (params.printerType === 'usb') {
             let device = params.printerVal;
-            if (!device) throw new Error("No hay impresora USB seleccionada.");
-            if (device === "NEW_WEBUSB" || !device.open) {
-                device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
-            }
-            if (!device) throw new Error("Sin dispositivo USB seleccionado.");
-
-            try {
-                if (!device.opened) await device.open();
-                await device.selectConfiguration(1);
-                await device.claimInterface(0);
-                const uint8Data = new Uint8Array(params.rawBytes);
-                await device.transferOut(3, uint8Data); 
-                return { ok: true };
-            } catch (err) {
-                console.error("Error WebUSB:", err);
-                throw new Error("Error USB. Verifique driver o conexión.");
-            }
+            if (device === "NEW_WEBUSB" || !device.open) device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
+            if (!device.opened) await device.open();
+            await device.selectConfiguration(1);
+            await device.claimInterface(0);
+            await device.transferOut(3, new Uint8Array(params.rawBytes)); 
+            return { ok: true };
         }
     }
 };
