@@ -6,36 +6,35 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
-    // --- FÍSICA: 576px (72mm) ---
+    // --- FÍSICA: 576px (Ancho Real de XPrinter) ---
     const PRINTER_WIDTH_PX = 576; 
     const CHAR_WIDTH_PX = 12;     
 
-    // --- HELPERS DE PRECISIÓN (ESC $) ---
-
+    // --- HELPERS (ESC $) ---
     const moveCursor = (pos) => {
         const nL = pos % 256;
         const nH = Math.floor(pos / 256);
         return [0x1B, 0x24, nL, nH]; 
     };
 
-    // 1. SEPARADOR "FULL DERECHA" (Estrategia Dividida)
-    // Imprimimos 47 guiones alineados a la derecha (Pixel 576).
-    // Dejamos 1 caracter vacío a la izquierda (12px) como margen visual.
-    const printSeparatorRight = () => {
-        // Total: 47 guiones (ancho 564px). Inicio: Pixel 12. Fin: Pixel 576.
-        // Lo partimos en 2 tandas para evitar el "Auto-Wrap" de la impresora.
+    // 1. SEPARADOR DE DISEÑO (GAP CENTRAL)
+    // Imprime: "--------------------      --------------------"
+    // Evita el salto de línea porque son dos textos cortos separados.
+    const printDesignerSeparator = () => {
+        // Usamos 21 guiones por lado (21 * 12 = 252px)
+        // Dejamos un hueco central de 72px (6 caracteres) que es donde solía fallar.
+        const dashLen = 21; 
+        const line = '-'.repeat(dashLen);
         
-        const part1 = '-'.repeat(24); // 24 chars
-        const part2 = '-'.repeat(23); // 23 chars
+        // PARTE 1: Izquierda (Pixel 0)
+        encoder.raw(moveCursor(0)).text(line);
         
-        // Tanda 1: Empieza en el pixel 12 (576 - 564)
-        encoder.raw(moveCursor(12)).text(part1);
-        
-        // Tanda 2: Empieza justo donde termina la anterior (12 + 24*12 = 300)
-        encoder.raw(moveCursor(300)).text(part2).newline();
+        // PARTE 2: Derecha (Pegado al final 576)
+        const posRight = PRINTER_WIDTH_PX - (dashLen * CHAR_WIDTH_PX);
+        encoder.raw(moveCursor(posRight)).text(line).newline();
     };
 
-    // 2. DERECHA EXACTA (Neto, IVA, Total)
+    // 2. DERECHA EXACTA (Para Neto, IVA y Total)
     const printRightPrecision = (text, isBold = false) => {
         const str = String(text);
         const textLen = str.length * CHAR_WIDTH_PX;
@@ -46,7 +45,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         if(isBold) encoder.bold(false);
     };
 
-    // 3. CENTRADO (Calculado al píxel)
+    // 3. CENTRADO EXACTO
     const printCenteredPrecision = (text, isBold = false) => {
         const str = String(text).trim();
         const textLen = str.length * CHAR_WIDTH_PX;
@@ -57,15 +56,14 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         if(isBold) encoder.bold(false);
     };
 
-    // 4. DOS COLUMNAS (Estilo Productos)
+    // 4. DOS COLUMNAS (Productos)
     const printSplitPrecision = (left, right) => {
-        // Izquierda: Empezamos un poquito adentro (Pixel 4) para estética
-        encoder.raw(moveCursor(4)).text(left);
+        // Izquierda (Pixel 0)
+        encoder.raw(moveCursor(0)).text(left);
         
-        // Derecha: Pegado al final (Pixel 576)
+        // Derecha (Pixel final)
         const strRight = String(right);
         const posRight = PRINTER_WIDTH_PX - (strRight.length * CHAR_WIDTH_PX);
-        
         encoder.raw(moveCursor(posRight)).text(strRight).newline();
     };
 
@@ -75,9 +73,9 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     encoder
         .initialize()
         .codepage('cp858')
-        .align('left'); 
+        .align('left'); // Base necesaria para ESC $
 
-    // Hardware Init (Habilitar ancho completo)
+    // Hardware Init
     encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // GS L 0
     encoder.raw([0x1d, 0x57, 0x40, 0x02]); // GS W 576
 
@@ -86,22 +84,22 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     // 2. ENCABEZADO
     printCenteredPrecision(data.empresa.razonSocial || 'EMPRESA', true);
     printCenteredPrecision(`RUT: ${data.empresa.rut || '-'}`);
+    // Recorte seguro para centrado
     printCenteredPrecision((data.empresa.direccion || 'Temuco').substring(0, 48));
     encoder.newline();
 
     // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
     
-    printSeparatorRight(); // <--- SEPARADOR ALINEADO A LA DERECHA
+    printDesignerSeparator(); // <--- SEPARADOR CON HUECO CENTRAL
     printCenteredPrecision(`BOLETA N: ${folioText}`, true);
-    // Fecha alineada visualmente con el inicio del separador (Pixel 12)
-    encoder.raw(moveCursor(12)).text(`FECHA: ${data.venta.fecha}`).newline();
-    printSeparatorRight();
+    encoder.raw(moveCursor(0)).text(`FECHA: ${data.venta.fecha}`).newline();
+    printDesignerSeparator();
     encoder.newline();
 
     // 4. PRODUCTOS
     printSplitPrecision('CANT DESCRIPCION', 'TOTAL');
-    printSeparatorRight();
+    printDesignerSeparator();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
@@ -112,18 +110,19 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         printSplitPrecision(leftPart, precio);
     });
 
-    printSeparatorRight();
+    printDesignerSeparator();
 
-    // 5. TOTALES
+    // 5. TOTALES (Neto/IVA a la derecha)
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
 
     printRightPrecision(`Neto: ${formatCLP(neto)}`);
     printRightPrecision(`IVA:  ${formatCLP(iva)}`);
+    
     encoder.newline();
 
-    // 6. TOTAL FINAL
+    // 6. TOTAL FINAL (Normal, Bold, Derecha Exacta)
     printRightPrecision(`TOTAL: ${formatCLP(total)}`, true);
 
     // 7. TIMBRE
