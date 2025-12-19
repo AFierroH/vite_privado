@@ -5,6 +5,10 @@ import tailwindcss from '@tailwindcss/vite'
 
 // Configuración de Vite con Vue + Tailwind 4
 export default defineConfig({
+  base: '/',build: {
+    outDir: 'dist',
+    assetsDir: 'assets'
+  },
   plugins: [
     vue(),
     tailwindcss()
