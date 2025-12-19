@@ -24,33 +24,35 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         encoder.text('-'.repeat(48)).newline();
     };
 
-    const right = (text, bold = false) => {
-        // Espera texto tipo: "NETO: $12.345"
-        const match = String(text).match(/^(.*?)(\$?\s*)([\d.,]+)/);
-        if (!match) {
-            encoder.align('left').text(text).newline();
-            return;
-        }
+const right = (text, bold = false) => {
+    // Espera: "NETO: $ 3.000"
+    const m = String(text).match(/^(.*?:)\s*\$\s*([\d.,]+)/);
+    if (!m) {
+        encoder.align('left').text(text).newline();
+        return;
+    }
 
-        const label = match[1];     // "NETO: "
-        const value = match[3];     // "12.345"
+    const label = m[1];   // "NETO:"
+    const value = m[2];   // "3.000"
 
-        const VALUE_COL = 48;       // borde derecho
-        const PESO_COL  = 48 - 12;  // $ 12 caracteres a la izquierda
+    const PESO_COL  = 48 - 12; // columna fija del $
+    const VALUE_COL = 48;      // borde derecho
 
-        const valuePad = VALUE_COL - value.length;
-        const pesoPad  = PESO_COL - 1;
+    const labelPad = PESO_COL - label.length - 1;
+    const valuePad = VALUE_COL - value.length;
 
-        const line =
-            ' '.repeat(pesoPad) + '$' +
-            ' '.repeat(valuePad - pesoPad - 1) +
-            value;
+    const line =
+        label +
+        ' '.repeat(labelPad) +
+        '$' +
+        ' '.repeat(valuePad - PESO_COL - 1) +
+        value;
 
-        encoder.align('left');
-        if (bold) encoder.bold(true);
-        encoder.text(line).newline();
-        if (bold) encoder.bold(false);
-    };
+    encoder.align('left');
+    if (bold) encoder.bold(true);
+    encoder.text(line).newline();
+    if (bold) encoder.bold(false);
+};
 
     const split = (left, rightText) => {
         const r = String(rightText);
@@ -61,14 +63,16 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
 
     const center = (text, bold = false) => {
         if (bold) encoder.bold(true);
-        encoder.align('center').text(text).align('left').newline();
+        encoder.align('center');
+        encoder.text(text);
+        encoder.newline();
+        encoder.align('left');
         if (bold) encoder.bold(false);
     };
 
     // =====================================================
     // ENCABEZADO LEGAL (CENTRADO)
     // =====================================================
-    center(data.empresa?.razonSocial || 'EMPRESA', true);
     center(`R.U.T: ${data.empresa?.rut || '-'}`);
     center('BOLETA ELECTRÓNICA', true);
     center(`N° ${data.venta?.folio || data.venta?.id_venta || '---'}`);
