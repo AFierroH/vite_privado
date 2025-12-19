@@ -13,8 +13,20 @@ const escpos = require('escpos');
 try { escpos.USB = require('escpos-usb'); } catch (e) {}
 escpos.Network = require('escpos-network');
 
-// --- HANDLERS ---
-ipcMain.handle('getLocalIp', async () => { /* ... tu código de IP ... */ return '127.0.0.1'; });
+ipcMain.handle('getLocalIp', async () => {
+    const nets = os.networkInterfaces();
+    let localIp = '127.0.0.1';
+    for (const name of Object.keys(nets)) {
+        for (const netInterface of nets[name]) {
+            if (netInterface.family === 'IPv4' && !netInterface.internal) {
+                localIp = netInterface.address;
+                break;
+            }
+        }
+        if (localIp !== '127.0.0.1') break;
+    }
+    return localIp;
+});
 
 ipcMain.handle("listUsbDevices", async () => {
     try {
@@ -28,9 +40,30 @@ ipcMain.handle("listUsbDevices", async () => {
     } catch(e) { return []; }
 });
 
-ipcMain.handle('cacheLogo', async (event, { empresaId, logoUrl }) => { /* ... tu código de logo ... */ return { ok: true } });
+ipcMain.handle('cacheLogo', async (event, { empresaId, logoUrl }) => {
+  try {
+    const logosDir = path.join(app.getPath('userData'), 'logos')
+    if (!fs.existsSync(logosDir)) {
+      fs.mkdirSync(logosDir, { recursive: true })
+    }
 
-// --- EL ÚNICO HANDLER DE IMPRESIÓN ---
+    const ext = path.extname(logoUrl).split('?')[0] || '.png'
+    const localPath = path.join(logosDir, `empresa_${empresaId}${ext}`)
+
+    const res = await fetch(logoUrl)
+    const buffer = Buffer.from(await res.arrayBuffer())
+    fs.writeFileSync(localPath, buffer)
+
+    return {
+      ok: true,
+      localPath
+    }
+  } catch (e) {
+    console.error('Error cacheando logo:', e)
+    return { ok: false, error: String(e) }
+  }
+});
+
 ipcMain.handle('printRaw', async (event, params) => {
     try {
         console.log("[Electron] Imprimiendo RAW bytes (Size: " + params.rawBytes.length + ")");
