@@ -13,7 +13,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const CHAR_WIDTH_PX = 12;
 
     // Margen seguro GLOBAL
-    const SAFE_LEFT_PX  = CHAR_WIDTH_PX;                 // +1 char
+    const SAFE_LEFT_PX  = CHAR_WIDTH_PX;                  // +1 char
     const SAFE_RIGHT_PX = PRINTER_WIDTH_PX - CHAR_WIDTH_PX; // -1 char
     const SAFE_WIDTH_PX = SAFE_RIGHT_PX - SAFE_LEFT_PX;
 
@@ -27,15 +27,23 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     };
 
     // =========================================================
-    // SEPARADOR — DOS LÍNEAS JUNTITAS (SAFE)
+    // SEPARADOR — UNA FILA, DOS TRAMOS HORIZONTALES (SAFE)
     // =========================================================
-    const printSeparatorDouble = () => {
-        const chars = Math.floor(SAFE_WIDTH_PX / CHAR_WIDTH_PX);
-        const startPx = SAFE_RIGHT_PX - (chars * CHAR_WIDTH_PX);
-        const line = '-'.repeat(chars);
+    const printSeparatorSplitHorizontal = () => {
+        const totalChars = Math.floor(SAFE_WIDTH_PX / CHAR_WIDTH_PX);
 
-        encoder.raw(moveCursor(startPx)).text(line).newline();
-        encoder.raw(moveCursor(startPx)).text(line).newline();
+        const leftChars  = Math.floor(totalChars / 2);
+        const rightChars = totalChars - leftChars;
+
+        const leftPart  = '-'.repeat(leftChars);
+        const rightPart = '-'.repeat(rightChars);
+
+        const startPx = SAFE_LEFT_PX;
+        const midPx   = SAFE_LEFT_PX + (leftChars * CHAR_WIDTH_PX);
+
+        // MISMA FILA, DOS ESCRITURAS
+        encoder.raw(moveCursor(startPx)).text(leftPart);
+        encoder.raw(moveCursor(midPx)).text(rightPart).newline();
     };
 
     // =========================================================
@@ -99,16 +107,16 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     // =========================================================
     const folioText = data.venta.folio || data.venta.id_venta || '---';
 
-    printSeparatorDouble();
+    printSeparatorSplitHorizontal();
     printCenteredPrecision(`BOLETA N° ${folioText}`, true);
     encoder.raw(moveCursor(SAFE_LEFT_PX)).text(`FECHA: ${data.venta.fecha}`).newline();
-    printSeparatorDouble();
+    printSeparatorSplitHorizontal();
 
     // =========================================================
     // PRODUCTOS
     // =========================================================
     printSplitPrecision('CANT DESCRIPCION', 'TOTAL');
-    printSeparatorDouble();
+    printSeparatorSplitHorizontal();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
@@ -119,7 +127,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         printSplitPrecision(left, precio);
     });
 
-    printSeparatorDouble();
+    printSeparatorSplitHorizontal();
 
     // =========================================================
     // TOTALES
