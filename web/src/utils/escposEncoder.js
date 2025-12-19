@@ -15,7 +15,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         newline: '\n'
     });
 
-    encoder.initialize().codepage('cp858').align('left');
+    encoder.initialize().codepage('cp858');
 
     // ==============================
     // HELPERS
@@ -25,8 +25,28 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     };
 
     const right = (text, bold = false) => {
-        const str = String(text);
-        const line = ' '.repeat(48 - str.length) + str;
+        // Espera texto tipo: "NETO: $12.345"
+        const match = String(text).match(/^(.*?)(\$?\s*)([\d.,]+)/);
+        if (!match) {
+            encoder.align('left').text(text).newline();
+            return;
+        }
+
+        const label = match[1];     // "NETO: "
+        const value = match[3];     // "12.345"
+
+        const VALUE_COL = 48;       // borde derecho
+        const PESO_COL  = 48 - 12;  // $ 12 caracteres a la izquierda
+
+        const valuePad = VALUE_COL - value.length;
+        const pesoPad  = PESO_COL - 1;
+
+        const line =
+            ' '.repeat(pesoPad) + '$' +
+            ' '.repeat(valuePad - pesoPad - 1) +
+            value;
+
+        encoder.align('left');
         if (bold) encoder.bold(true);
         encoder.text(line).newline();
         if (bold) encoder.bold(false);
@@ -50,14 +70,12 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     // =====================================================
     center(data.empresa?.razonSocial || 'EMPRESA', true);
     center(`R.U.T: ${data.empresa?.rut || '-'}`);
-    encoder.newline();
-
     center('BOLETA ELECTRÓNICA', true);
     center(`N° ${data.venta?.folio || data.venta?.id_venta || '---'}`);
     encoder.newline();
 
     center('SII - TEMUCO');
-    encoder.newline();
+    separator();
 
     // =====================================================
     // DATOS EMPRESA (IZQUIERDA)
@@ -80,9 +98,9 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     separator();
 
     data.detalles.forEach(d => {
-        const cant = String(d.cantidad).padEnd(4);
+        const cant = String(d.cantidad).padEnd(6);
         const nombre = (d.nombre || '').substring(0, 30);
-        const precio = formatCLP(d.subtotal);
+        const precio = new Intl.NumberFormat('es-CL').format(d.subtotal);
         split(`${cant} ${nombre}`, precio);
     });
 
