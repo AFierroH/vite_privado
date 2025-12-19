@@ -43,23 +43,19 @@ export const PrinterService = {
     },
 
     // 3. IMPRIMIR (Corrección para LAN)
-    async imprimir(params) {
-        // A: ELECTRON
+async imprimir(params) {
         if (isElectron) {
-            const opts = {
-                type: params.printerType, ip: params.ip, port: params.port,
-                vid: params.printerVal?.vid, pid: params.printerVal?.pid,
-                content417: params.content417
+            const payload = {
+                ...params,
+                rawBytes: Array.from(params.rawBytes)
             };
-            return await window.electronAPI.printFromData(params.dataObj, opts);
+            return await window.electronAPI.printRaw(payload);
         }
 
         // B: WEB - RED LAN (QZ Tray)
         if (params.printerType === 'lan') {
             if (!qz.websocket.isActive()) await qz.websocket.connect();
             
-            // CORRECCIÓN: Conversión más segura a Base64 para datos binarios (imágenes)
-            // Usamos un array normal para evitar problemas de pila con spread operator en arrays gigantes
             const bytes = new Uint8Array(params.rawBytes);
             let binary = '';
             const len = bytes.byteLength;

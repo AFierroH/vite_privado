@@ -6,8 +6,8 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
-    // ANCHO ESTÁNDAR 80MM (48 caracteres en Fuente A)
-    const WIDTH = 48;
+    // 48 es el ancho real si usamos los comandos RAW de abajo.
+    const WIDTH = 48; 
     const SEPARATOR = '-'.repeat(WIDTH);
 
     // Helpers
@@ -18,21 +18,20 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     };
 
     // ==========================================
-    // 1. INIT & HACK DE MÁRGENES (RAW)
+    // 1. INIT & HACK DE MÁRGENES (OBLIGATORIO)
     // ==========================================
     encoder
         .initialize()
         .codepage('cp858');
 
-    // --- MAGIA RAW PARA XPRINTER ---
-    // 1. Resetear margen izquierdo a 0 (Hex: 1D 4C 00 00)
-    encoder.raw([0x1d, 0x4c, 0x00, 0x00]);
-
-    // 2. Forzar ancho de área de impresión a 80mm (576 puntos) (Hex: 1D 57 40 02)
+    // --- ¡NO BORRES ESTO! ES LO QUE ARREGLA EL MARGEN ---
+    // 1. Margen Izquierdo = 0
+    encoder.raw([0x1d, 0x4c, 0x00, 0x00]); 
+    // 2. Ancho de impresión = 576 puntos (80mm COMPLETO)
     encoder.raw([0x1d, 0x57, 0x40, 0x02]);
+    // -----------------------------------------------------
 
     encoder
-        .font('a')
         .align('left');
 
     // =====================
@@ -61,15 +60,12 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     // =====================
     // 4. PRODUCTOS
     // =====================
-    // Ajustamos la cabecera manualmente
     encoder.text('CANT DESCRIPCION'.padEnd(WIDTH - 12) + '       TOTAL').newline()
            .text(SEPARATOR).newline();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
         const precio = formatCLP(d.subtotal);
-
-        // Cálculo dinámico para 48 columnas
         const colCantW = 4;
         const colPrecioW = precio.length;
         const colNombreW = WIDTH - colCantW - colPrecioW - 1;
@@ -84,14 +80,16 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     encoder.text(SEPARATOR).newline();
 
     // =====================
-    // 5. TOTALES (Alineación Nativa Derecha)
+    // 5. TOTALES (Con alineación nativa)
     // =====================
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
 
+    // Aquí usamos .align('right'). Gracias a los comandos RAW del inicio,
+    // ahora "right" significa "el borde del papel", no "el borde imaginario".
     encoder
-        .align('right') // Forzar derecha real
+        .align('right') 
         .text(`Neto: ${formatCLP(neto)}`).newline()
         .text(`IVA:  ${formatCLP(iva)}`).newline();
 
@@ -119,7 +117,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             img.src = imgSource;
             await new Promise(r => { img.onload = r; img.onerror = r; });
 
-            // Usamos 576px (Ancho total físico que configuramos con RAW)
+            // 576px es el ancho físico que configuramos arriba
             const printerWidthPx = 576;
             const alignedHeight = Math.ceil(img.height / 8) * 8;
 
@@ -131,7 +129,6 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, printerWidthPx, alignedHeight);
             
-            // Centrar
             const xPos = (printerWidthPx - img.width) / 2;
             ctx.drawImage(img, xPos, 0);
 

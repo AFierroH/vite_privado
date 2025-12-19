@@ -262,7 +262,7 @@ async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío');
     
     if (usarImpresora.value && printerType.value === 'usb' && !selectedUsbDevice.value && !isElectron) {
-        alert("⚠️ Selecciona una impresora USB antes de pagar.");
+        alert("Selecciona una impresora USB antes de pagar.");
         return;
     }
 
@@ -286,11 +286,11 @@ async function checkout() {
     };
 
     try {
-        console.log('📤 Enviando venta al servidor...');
+        console.log('Enviando venta al servidor...');
         const resp = await emitirVenta(payload);
         const data = resp?.data ?? resp;
         
-        console.log('📦 Respuesta del servidor:', data);
+        console.log('Respuesta del servidor:', data);
         
         if (!data || !data.venta) {
             throw new Error("Error: Respuesta inválida del servidor");
@@ -301,9 +301,9 @@ async function checkout() {
         const timbreXml = data.timbre || null; // El TED completo para imprimir
         const pdf417Img = data.ticket?.pdf417Base64 || null; // <--- NUEVO: Capturamos la imagen
 
-        console.log(`🎫 Folio recibido: ${folioParaImprimir}`);
-        console.log(`🔏 ¿Tiene timbre XML?: ${timbreXml ? 'SÍ' : 'NO'}`);
-        console.log(`🖼️ ¿Tiene imagen PDF417?: ${pdf417Img ? 'SÍ' : 'NO'}`);
+        console.log(`Folio recibido: ${folioParaImprimir}`);
+        console.log(`¿Tiene timbre XML?: ${timbreXml ? 'SÍ' : 'NO'}`);
+        console.log(`¿Tiene imagen PDF417?: ${pdf417Img ? 'SÍ' : 'NO'}`);
         // IMPRIMIR si está activado
         if (usarImpresora.value) {
             try {
@@ -325,15 +325,16 @@ async function checkout() {
                     total: total.value
                 };
                 
-                console.log('🖨️ Preparando impresión...');
+                console.log('Preparando impresión...');
                 
                 let rawBytes = null;
                 
-                // Generar bytes ESC/POS solo en web (no en Electron)
-                if (!isElectron) {
-                    const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
-                    rawBytes = await generarTicketEscPos(printDataObj, timbreXml, pdf417Img);
-                }
+                // CAMBIO: Generar bytes SIEMPRE, sea Web o Electron.
+                // Así ambos usan el mismo diseño y los mismos arreglos de márgenes.
+                const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
+                
+                // Pasamos el timbreXml y el pdf417Img
+                rawBytes = await generarTicketEscPos(printDataObj, timbreXml, pdf417Img);
 
                 // Enviar a imprimir
                 await PrinterService.imprimir({
@@ -342,15 +343,15 @@ async function checkout() {
                     ip: printerInfo.value.ip,
                     port: printerInfo.value.port,
                     dataObj: printDataObj, 
-                    rawBytes: rawBytes,    
-                    content417: timbreXml  // El TED completo
+                    rawBytes: rawBytes,    // <--- Ahora Electron recibe esto lleno
+                    content417: timbreXml 
                 });
                 
-                console.log('✅ Ticket impreso correctamente');
+                console.log('Ticket impreso correctamente');
                 
             } catch (printError) {
-                console.error('❌ Error al imprimir:', printError);
-                alert(`⚠️ Venta registrada pero falló la impresión: ${printError.message}`);
+                console.error('Error al imprimir:', printError);
+                alert(`Venta registrada pero falló la impresión: ${printError.message}`);
             }
         }
         
@@ -359,17 +360,17 @@ async function checkout() {
         q.value = '';
         
         if (isElectron) {
-            alert(`✅ Venta Finalizada\nFolio: ${folioParaImprimir}`);
+            alert(`Venta Finalizada\nFolio: ${folioParaImprimir}`);
         } else {
-            alert(`✅ Venta registrada exitosamente\nFolio: ${folioParaImprimir}`);
+            alert(`Venta registrada exitosamente\nFolio: ${folioParaImprimir}`);
         }
         
         // Recargar productos
         search();
 
     } catch (error) {
-        console.error('❌ Error en checkout:', error);
-        alert('❌ Error al procesar la venta: ' + (error.message || error));
+        console.error('Error en checkout:', error);
+        alert('Error al procesar la venta: ' + (error.message || error));
     } finally {
         isLoading.value = false;
     }

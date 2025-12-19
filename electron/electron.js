@@ -243,6 +243,58 @@ ipcMain.handle('cacheLogo', async (event, { empresaId, logoUrl }) => {
     return { ok: false, error: String(e) }
   }
 })
+ipcMain.handle('printRaw', async (event, params) => {
+    try {
+        console.log("[Electron] Imprimiendo RAW bytes...");
+        const bytes = Buffer.from(params.rawBytes); // Reconstruir Buffer
+        
+        // A. USB
+        if (params.printerType === 'usb') {
+            if (!escpos.USB) throw new Error("Driver USB no cargado");
+            
+            let device;
+            if (params.vid && params.pid) {
+                device = new escpos.USB(params.vid, params.pid);
+            } else {
+                device = new escpos.USB();
+            }
+
+            // Enviar bytes directo al dispositivo (Bypasseando escpos.Printer)
+            return new Promise((resolve, reject) => {
+                device.open((err) => {
+                    if (err) return reject(err);
+                    device.write(bytes, (err) => {
+                        if (err) return reject(err);
+                        device.close(() => {
+                            resolve({ ok: true });
+                        });
+                    });
+                });
+            });
+        }
+        
+        // B. LAN (Network)
+        if (params.printerType === 'lan') {
+             const device = new escpos.Network(params.ip, params.port || 9100);
+             return new Promise((resolve, reject) => {
+                device.open((err) => {
+                    if (err) return reject(err);
+                    device.write(bytes, (err) => {
+                        if (err) return reject(err);
+                        device.close(() => {
+                            resolve({ ok: true });
+                        });
+                    });
+                });
+             });
+        }
+
+    } catch (err) {
+        console.error("Error impresión RAW:", err);
+        return { ok: false, error: String(err) };
+    }
+});
+
 // Configuración Ventana
 let mainWindow;
 function createWindow() {
