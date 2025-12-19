@@ -43,21 +43,23 @@ export const PrinterService = {
     },
 
     // 3. IMPRIMIR (FIX CLONE ERROR)
-    async imprimir(params) {
+        async imprimir(params) {
         
         // A: ELECTRON
         if (isElectron) {
             const payload = {
                 printerType: params.printerType,
-                // Extraemos solo VID/PID si existe el objeto, si no undefined
                 vid: params.printerVal?.vid, 
                 pid: params.printerVal?.pid,
                 ip: params.ip,
                 port: params.port,
-                // Convertimos Uint8Array a Array normal para evitar errores de clonación en IPC antiguo
                 rawBytes: Array.from(params.rawBytes || []) 
             };
             
+            if (payload.rawBytes.length === 0) {
+                console.error("ERROR: rawBytes está vacío. Revisa Ventas.vue");
+            }
+
             return await window.electronAPI.printRaw(payload);
         }
 

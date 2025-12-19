@@ -296,15 +296,14 @@ async function checkout() {
             throw new Error("Error: Respuesta inválida del servidor");
         }
 
-        // Extraer datos de la respuesta
         const folioParaImprimir = data.folio || data.venta.id_venta || '---';
-        const timbreXml = data.timbre || null; // El TED completo para imprimir
-        const pdf417Img = data.ticket?.pdf417Base64 || null; // <--- NUEVO: Capturamos la imagen
+        const timbreXml = data.timbre || null; 
+        const pdf417Img = data.ticket?.pdf417Base64 || null; 
 
         console.log(`Folio recibido: ${folioParaImprimir}`);
         console.log(`¿Tiene timbre XML?: ${timbreXml ? 'SÍ' : 'NO'}`);
         console.log(`¿Tiene imagen PDF417?: ${pdf417Img ? 'SÍ' : 'NO'}`);
-        // IMPRIMIR si está activado
+
         if (usarImpresora.value) {
             try {
                 const printDataObj = {
@@ -326,24 +325,17 @@ async function checkout() {
                 };
                 
                 console.log('Preparando impresión...');
-                
                 let rawBytes = null;
-                
-                // CAMBIO: Generar bytes SIEMPRE, sea Web o Electron.
-                // Así ambos usan el mismo diseño y los mismos arreglos de márgenes.
                 const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
-                
-                // Pasamos el timbreXml y el pdf417Img
                 rawBytes = await generarTicketEscPos(printDataObj, timbreXml, pdf417Img);
 
-                // Enviar a imprimir
                 await PrinterService.imprimir({
                     printerType: printerType.value,
                     printerVal: selectedUsbDevice.value,
                     ip: printerInfo.value.ip,
                     port: printerInfo.value.port,
                     dataObj: printDataObj, 
-                    rawBytes: rawBytes,    // <--- Ahora Electron recibe esto lleno
+                    rawBytes: rawBytes,
                     content417: timbreXml 
                 });
                 
@@ -355,7 +347,6 @@ async function checkout() {
             }
         }
         
-        // Limpiar carrito y mostrar éxito
         cart.value = [];
         q.value = '';
         
@@ -364,8 +355,7 @@ async function checkout() {
         } else {
             alert(`Venta registrada exitosamente\nFolio: ${folioParaImprimir}`);
         }
-        
-        // Recargar productos
+
         search();
 
     } catch (error) {
