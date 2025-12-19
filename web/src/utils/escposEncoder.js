@@ -15,7 +15,8 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         newline: '\n'
     });
 
-    encoder.initialize().codepage('cp858');
+    encoder.initialize().codepage('cp858').align('center');
+    encoder.newline();
 
     // ==============================
     // HELPERS
@@ -24,35 +25,35 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         encoder.text('-'.repeat(48)).newline();
     };
 
-const right = (text, bold = false) => {
-    // Espera: "NETO: $ 3.000"
-    const m = String(text).match(/^(.*?:)\s*\$\s*([\d.,]+)/);
-    if (!m) {
-        encoder.align('left').text(text).newline();
-        return;
-    }
+    const right = (text, bold = false) => {
+        // Espera: "NETO: $ 3.000"
+        const m = String(text).match(/^(.*?:)\s*\$\s*([\d.,]+)/);
+        if (!m) {
+            encoder.align('left').text(text).newline();
+            return;
+        }
 
-    const label = m[1];   // "NETO:"
-    const value = m[2];   // "3.000"
+        const label = m[1];   // "NETO:"
+        const value = m[2];   // "3.000"
 
-    const PESO_COL  = 48 - 12; // columna fija del $
-    const VALUE_COL = 48;      // borde derecho
+        const PESO_COL  = 48 - 12; // columna fija del $
+        const VALUE_COL = 48;      // borde derecho
 
-    const labelPad = PESO_COL - label.length - 1;
-    const valuePad = VALUE_COL - value.length;
+        const labelPad = PESO_COL - label.length - 1;
+        const valuePad = VALUE_COL - value.length;
 
-    const line =
-        label +
-        ' '.repeat(labelPad) +
-        '$' +
-        ' '.repeat(valuePad - PESO_COL - 1) +
-        value;
+        const line =
+            label +
+            ' '.repeat(labelPad) +
+            '$' +
+            ' '.repeat(valuePad - PESO_COL) +
+            value;
 
-    encoder.align('left');
-    if (bold) encoder.bold(true);
-    encoder.text(line).newline();
-    if (bold) encoder.bold(false);
-};
+        encoder.align('left');
+        if (bold) encoder.bold(true);
+        encoder.text(line).newline();
+        if (bold) encoder.bold(false);
+    };
 
     const split = (left, rightText) => {
         const r = String(rightText);
