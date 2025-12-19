@@ -14,7 +14,7 @@ if (!isElectron) {
 }
 
 export const PrinterService = {
-    // 1. LISTAR (Igual que antes)
+    // 1. LISTAR
     async listarUSB() {
         if (isElectron) {
             try {
@@ -28,13 +28,13 @@ export const PrinterService = {
                 if (myPrinters.length > 0) {
                     return myPrinters.map((d, i) => ({ name: `XPrinter WebUSB #${i+1}`, val: d, type: 'WEBUSB' }));
                 } else {
-                    return [{ name: "🔌 Click para Conectar (WebUSB)", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
+                    return [{ name: "Click para Conectar (WebUSB)", val: "NEW_WEBUSB", type: 'WEBUSB_NEW' }];
                 }
             } catch (e) { return []; }
         }
     },
 
-    // 2. REQUEST (Igual que antes)
+    // 2. REQUEST
     async requestWebUsb() {
         try {
             const device = await navigator.usb.requestDevice({ filters: [{ vendorId: MY_VID, productId: MY_PID }] });
@@ -42,13 +42,22 @@ export const PrinterService = {
         } catch (e) { return null; }
     },
 
-    // 3. IMPRIMIR (Corrección para LAN)
-async imprimir(params) {
+    // 3. IMPRIMIR (FIX CLONE ERROR)
+    async imprimir(params) {
+        
+        // A: ELECTRON
         if (isElectron) {
             const payload = {
-                ...params,
-                rawBytes: Array.from(params.rawBytes)
+                printerType: params.printerType,
+                // Extraemos solo VID/PID si existe el objeto, si no undefined
+                vid: params.printerVal?.vid, 
+                pid: params.printerVal?.pid,
+                ip: params.ip,
+                port: params.port,
+                // Convertimos Uint8Array a Array normal para evitar errores de clonación en IPC antiguo
+                rawBytes: Array.from(params.rawBytes || []) 
             };
+            
             return await window.electronAPI.printRaw(payload);
         }
 
@@ -75,7 +84,7 @@ async imprimir(params) {
             return await qz.print(config, data);
         }
 
-        // C: WEB - USB (Igual que antes)
+        // C: WEB - USB
         if (params.printerType === 'usb') {
             let device = params.printerVal;
             if (!device) throw new Error("No hay impresora USB seleccionada.");
