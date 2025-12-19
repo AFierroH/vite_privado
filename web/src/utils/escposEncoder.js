@@ -6,63 +6,59 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
     // --- CONSTANTES ---
-    const PRINTER_WIDTH_PX = 576; // 72mm reales (Ancho físico XPrinter)
-    const CHAR_WIDTH_PX = 12;     // Ancho de 1 caracter Normal (Font A)
-    const BIG_CHAR_WIDTH_PX = 24; // Ancho de 1 caracter Gigante (Font A x2)
+    const WIDTH_NORMAL = 48; // 48 caracteres (Font A)
+    const WIDTH_BIG = 24;    // 24 caracteres (Font A x2)
     
-    // Separador: Usamos 48 si confías en tu impresora, o 46 para margen de seguridad.
-    // Con 576px configurados, 48 deberían caber exactos.
-    const SEPARATOR = '-'.repeat(48); 
+    // Separador seguro (44 chars para evitar saltos de línea accidentales)
+    const SEPARATOR = '-'.repeat(48);
 
-    // --- HELPERS DE POSICIONAMIENTO ABSOLUTO (ESC $) ---
+    // --- HELPERS SEGUROS ---
 
-    const moveCursor = (pos) => {
-        const nL = pos % 256;
-        const nH = Math.floor(pos / 256);
-        return [0x1B, 0x24, nL, nH]; // Comando: Mover cursor a píxel X
-    };
-
-    // 1. Derecha Precisa (Para texto Normal)
-    const printRightPrecision = (text) => {
-        const str = String(text);
-        const textLen = str.length * CHAR_WIDTH_PX;
-        const pos = PRINTER_WIDTH_PX - textLen;
-        
-        encoder.raw(moveCursor(pos)).text(str).newline();
-    };
-
-    // 2. Derecha Precisa GIGANTE (Para el TOTAL)
-    const printRightBig = (text) => {
-        const str = String(text);
-        const textLen = str.length * BIG_CHAR_WIDTH_PX; // Calculamos con ancho doble
-        const pos = PRINTER_WIDTH_PX - textLen;
-
-        // IMPORTANTE: El orden evita el error "Changing fonts in middle of line"
-        encoder.size('2x')        // 1. Cambiar tamaño
-               .bold(true)        // 2. Poner negrita
-               .raw(moveCursor(pos)) // 3. Mover cursor (ESC $)
-               .text(str)         // 4. Escribir
-               .newline()         // 5. Terminar línea
-               .size('normal')    // 6. Resetear
-               .bold(false);
-    };
-
-    // 3. Centrado Seguro (Espacios)
+    // 1. Centrar con espacios (Más seguro que ESC $ para encabezados)
     const printCenteredSafe = (text, isBold = false) => {
         const str = String(text).trim();
-        // 48 columnas disponibles
-        const padLeft = Math.max(0, Math.floor((48 - str.length) / 2));
+        const padLeft = Math.max(0, Math.floor((WIDTH_NORMAL - str.length) / 2));
+        
         if(isBold) encoder.bold(true);
         encoder.text(' '.repeat(padLeft) + str).newline();
         if(isBold) encoder.bold(false);
+    };
+
+    // 2. Derecha con espacios (Para el Total Gigante)
+    const printRightSafeBig = (text) => {
+        const str = String(text).trim();
+        // Rellenamos hasta 24 caracteres (ancho en modo gigante)
+        const padded = str.padStart(WIDTH_BIG, ' '); 
+        
+        encoder.size('2x')
+               .bold(true)
+               .text(padded)
+               .newline()
+               .bold(false)
+               .size('normal')
+               .newline(1);
+    };
+
+    // 3. Derecha con ESC $ (Para Neto/IVA, ya que confirmaste que funciona)
+    const PRINTER_WIDTH_PX = 576;
+    const CHAR_WIDTH_PX = 12;
+    const moveCursor = (pos) => {
+        const nL = pos % 256;
+        const nH = Math.floor(pos / 256);
+        return [0x1B, 0x24, nL, nH];
+    };
+    
+    const printRightPrecision = (text) => {
+        const str = String(text);
+        const pos = PRINTER_WIDTH_PX - (str.length * CHAR_WIDTH_PX);
+        encoder.raw(moveCursor(pos)).text(str).newline();
     };
 
     // 4. Dos Columnas (Espacios)
     const printSplitSafe = (left, right) => {
         const strLeft = String(left).substring(0, 24);
         const strRight = String(right);
-        // Rellenar el medio con espacios
-        const spaces = 48 - strLeft.length - strRight.length;
+        const spaces = WIDTH_NORMAL - strLeft.length - strRight.length;
         encoder.text(strLeft + ' '.repeat(Math.max(1, spaces)) + strRight).newline();
     };
 
@@ -72,15 +68,15 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     encoder
         .initialize()
         .codepage('cp858')
-        .align('left'); // Base izquierda obligatoria para ESC $
+        .align('left'); // Base izquierda para que funcionen los espacios
 
-    // Configuración Hardware (Esto habilita los 80mm reales)
-    encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // GS L 0 (Margen Izq 0)
-    encoder.raw([0x1d, 0x57, 0x40, 0x02]); // GS W 576 (Ancho 72mm/576px)
+    // Hacks de Hardware
+    encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // Margen Izq 0
+    encoder.raw([0x1d, 0x57, 0x40, 0x02]); // Ancho 576
 
     // =================================================================
 
-    // 2. ENCABEZADO
+    // 2. ENCABEZADO (Usando espacios)
     printCenteredSafe(data.empresa.razonSocial || 'EMPRESA', true);
     printCenteredSafe(`RUT: ${data.empresa.rut || '-'}`);
     printCenteredSafe((data.empresa.direccion || 'Temuco').substring(0, 48));
@@ -104,13 +100,14 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
         const precio = formatCLP(d.subtotal);
         const nombre = (d.nombre || '').substring(0, 22);
         
+        // Armamos la parte izquierda "1   CocaCola"
         const leftPart = `${cant.padEnd(4)} ${nombre}`;
         printSplitSafe(leftPart, precio);
     });
 
     printCenteredSafe(SEPARATOR);
 
-    // 5. TOTALES (Neto/IVA a la derecha con ESC $)
+    // 5. TOTALES (Neto/IVA con tu método que funcionaba)
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
@@ -120,13 +117,11 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     
     encoder.newline();
 
-    // 6. TOTAL GIGANTE (A la derecha con ESC $)
+    // 6. TOTAL GIGANTE (Con Padding de espacios, infalible)
     const txtTotal = `TOTAL: ${formatCLP(total)}`;
-    printRightBig(txtTotal);
+    printRightSafeBig(txtTotal);
 
-    encoder.newline();
-
-    // 7. PIE DE PAGINA (Solo Texto)
+    // 7. PIE DE PAGINA (Solo Texto, sin PDF417)
     printCenteredSafe('Timbre Electronico SII');
     printCenteredSafe('Verifique en www.sii.cl');
     
