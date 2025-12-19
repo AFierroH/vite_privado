@@ -9,12 +9,8 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const WIDTH_NORMAL = 48; // 48 caracteres (Font A)
     const WIDTH_BIG = 24;    // 24 caracteres (Font A x2)
     
-    // Separador seguro (44 chars para evitar saltos de línea accidentales)
-    const SEPARATOR = '-'.repeat(44);
+    const SEPARATOR = '-'.repeat(48);
 
-    // --- HELPERS SEGUROS ---
-
-    // 1. Centrar con espacios (Más seguro que ESC $ para encabezados)
     const printCenteredSafe = (text, isBold = false) => {
         const str = String(text).trim();
         const padLeft = Math.max(0, Math.floor((WIDTH_NORMAL - str.length) / 2));
@@ -80,7 +76,6 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     printCenteredSafe(data.empresa.razonSocial || 'EMPRESA', true);
     printCenteredSafe(`RUT: ${data.empresa.rut || '-'}`);
     printCenteredSafe((data.empresa.direccion || 'Temuco').substring(0, 48));
-    encoder.newline();
 
     // 3. INFO VENTA
     const folioText = data.venta.folio || data.venta.id_venta || '---';
@@ -89,7 +84,6 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     printCenteredSafe(`BOLETA N: ${folioText}`, true);
     encoder.text(`FECHA: ${data.venta.fecha}`).newline();
     printCenteredSafe(SEPARATOR);
-    encoder.newline();
 
     // 4. PRODUCTOS
     printSplitSafe('CANT DESCRIPCION', 'TOTAL');
