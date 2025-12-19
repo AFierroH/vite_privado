@@ -64,52 +64,64 @@ ipcMain.handle('cacheLogo', async (event, { empresaId, logoUrl }) => {
   }
 });
 
+// --- LA TUBERÍA MAESTRA ---
 ipcMain.handle('printRaw', async (event, params) => {
+    console.log(`[Electron] Recibidos ${params.rawBytes.length} bytes para imprimir.`);
+    
     try {
-        console.log("[Electron] Imprimiendo RAW bytes (Size: " + params.rawBytes.length + ")");
-        const bytes = Buffer.from(params.rawBytes);
+        // Convertimos el Array de JS a Buffer de Node
+        const buffer = Buffer.from(params.rawBytes);
+        let device;
 
+        // 1. CONEXIÓN
         if (params.printerType === 'usb') {
-            if (!escpos.USB) throw new Error("Driver USB no cargado");
-            const device = (params.vid && params.pid) 
+            if (!escpos.USB) throw new Error("Falta driver USB");
+            // Si viene VID/PID los usamos, si no, busca el primero
+            device = (params.vid && params.pid) 
                 ? new escpos.USB(params.vid, params.pid) 
                 : new escpos.USB();
+        } 
+        else if (params.printerType === 'lan') {
+            device = new escpos.Network(params.ip, params.port || 9100);
+        }
+        else {
+            throw new Error("Tipo de impresora desconocido");
+        }
+
+        // 2. ESCRIBIR Y ADIÓS (Sin pensar)
+        return new Promise((resolve, reject) => {
+            device.open((err) => {
+                if (err) return reject("Error abriendo: " + err);
                 
-            return new Promise((resolve, reject) => {
-                device.open((err) => {
-                    if (err) return reject(err);
-                    device.write(bytes, (err) => {
-                        if (err) return reject(err);
-                        device.close(() => resolve({ ok: true }));
+                // Aquí está la clave: Escribimos el buffer crudo que vino de Vue
+                device.write(buffer, (err) => {
+                    if (err) return reject("Error escribiendo: " + err);
+                    
+                    device.close(() => {
+                        console.log("[Electron] Impresión finalizada.");
+                        resolve({ ok: true });
                     });
                 });
             });
-        }
-        
-        if (params.printerType === 'lan') {
-             const device = new escpos.Network(params.ip, params.port || 9100);
-             return new Promise((resolve, reject) => {
-                device.open((err) => {
-                    if (err) return reject(err);
-                    device.write(bytes, (err) => {
-                        if (err) return reject(err);
-                        device.close(() => resolve({ ok: true }));
-                    });
-                });
-             });
-        }
+        });
+
     } catch (err) {
-        console.error("Error impresión RAW:", err);
+        console.error("[Electron Error]", err);
         return { ok: false, error: String(err) };
     }
 });
 
+// --- VENTANA ---
 let mainWindow;
 function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200, height: 800,
       icon: path.join(__dirname, 'build/icon.ico'), 
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false }
+      webPreferences: { 
+        preload: path.join(__dirname, 'preload.cjs'), 
+        contextIsolation: true, 
+        nodeIntegration: false 
+      }
     });
     const isDev = !app.isPackaged; 
     if (isDev) mainWindow.loadURL('http://localhost:5173');

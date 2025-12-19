@@ -92,6 +92,7 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
 
     // TIMBRE
     encoder.align('center');
+    /*
     try {
         let imgSource = null;
         if (timbreXml) {
@@ -129,7 +130,9 @@ export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     } catch (e) {
         encoder.text('(Error Timbre)').newline();
     }
-
+*/
+    encoder.text('--- PRUEBA DE ANCHO DE TEXTO ---').newline();
+    encoder.text('IZQUIERDA                                DERECHA').newline();
     encoder.newline(4).cut();
     return encoder.encode();
 }

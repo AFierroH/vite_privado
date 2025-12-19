@@ -36,16 +36,19 @@ export const PrinterService = {
         } catch (e) { return null; }
     },
     async imprimir(params) {
-        // MODO ELECTRON (Limpiamos payload)
+        // SI ES ELECTRON
         if (isElectron) {
+            // Creamos paquete limpio
             const payload = {
                 printerType: params.printerType,
-                vid: params.printerVal?.vid, 
+                vid: params.printerVal?.vid,
                 pid: params.printerVal?.pid,
                 ip: params.ip,
                 port: params.port,
-                rawBytes: Array.from(params.rawBytes || []) // Conversión crítica
+                // ¡IMPORTANTE! Rompemos la referencia del Uint8Array
+                rawBytes: Array.from(params.rawBytes || []) 
             };
+            // Llamamos a la tubería tonta
             return await window.electronAPI.printRaw(payload);
         }
         // MODO WEB LAN
