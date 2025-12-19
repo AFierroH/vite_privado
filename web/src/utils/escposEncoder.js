@@ -6,161 +6,174 @@ const formatCLP = (num) => '$ ' + new Intl.NumberFormat('es-CL').format(num);
 export async function generarTicketEscPos(data, timbreXml, preGeneratedImg) {
     const encoder = new ReceiptPrinterEncoder();
 
-    // --- FÍSICA: 576px (Ancho Real de XPrinter) ---
-    const PRINTER_WIDTH_PX = 576; 
-    const CHAR_WIDTH_PX = 12;     
+    // =========================================================
+    // CONFIGURACIÓN FÍSICA
+    // =========================================================
+    const PRINTER_WIDTH_PX = 576;
+    const CHAR_WIDTH_PX = 12;
 
-    // --- HELPERS (ESC $) ---
+    // Margen seguro GLOBAL
+    const SAFE_LEFT_PX  = CHAR_WIDTH_PX;                 // +1 char
+    const SAFE_RIGHT_PX = PRINTER_WIDTH_PX - CHAR_WIDTH_PX; // -1 char
+    const SAFE_WIDTH_PX = SAFE_RIGHT_PX - SAFE_LEFT_PX;
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
     const moveCursor = (pos) => {
         const nL = pos % 256;
         const nH = Math.floor(pos / 256);
-        return [0x1B, 0x24, nL, nH]; 
+        return [0x1B, 0x24, nL, nH];
     };
 
-    // 1. SEPARADOR DE DISEÑO (GAP CENTRAL)
-    // Imprime: "--------------------      --------------------"
-    // Evita el salto de línea porque son dos textos cortos separados.
-    const printDesignerSeparator = () => {
-        // Usamos 21 guiones por lado (21 * 12 = 252px)
-        // Dejamos un hueco central de 72px (6 caracteres) que es donde solía fallar.
-        const dashLen = 21; 
-        const line = '-'.repeat(dashLen);
-        
-        // PARTE 1: Izquierda (Pixel 0)
-        encoder.raw(moveCursor(0)).text(line);
-        
-        // PARTE 2: Derecha (Pegado al final 576)
-        const posRight = PRINTER_WIDTH_PX - (dashLen * CHAR_WIDTH_PX);
-        encoder.raw(moveCursor(posRight)).text(line).newline();
+    // =========================================================
+    // SEPARADOR — DOS LÍNEAS JUNTITAS (SAFE)
+    // =========================================================
+    const printSeparatorDouble = () => {
+        const chars = Math.floor(SAFE_WIDTH_PX / CHAR_WIDTH_PX);
+        const startPx = SAFE_RIGHT_PX - (chars * CHAR_WIDTH_PX);
+        const line = '-'.repeat(chars);
+
+        encoder.raw(moveCursor(startPx)).text(line).newline();
+        encoder.raw(moveCursor(startPx)).text(line).newline();
     };
 
-    // 2. DERECHA EXACTA (Para Neto, IVA y Total)
+    // =========================================================
+    // DERECHA EXACTA (SAFE)
+    // =========================================================
     const printRightPrecision = (text, isBold = false) => {
         const str = String(text);
         const textLen = str.length * CHAR_WIDTH_PX;
-        const pos = PRINTER_WIDTH_PX - textLen;
-        
-        if(isBold) encoder.bold(true);
+        const pos = SAFE_RIGHT_PX - textLen;
+
+        if (isBold) encoder.bold(true);
         encoder.raw(moveCursor(pos)).text(str).newline();
-        if(isBold) encoder.bold(false);
+        if (isBold) encoder.bold(false);
     };
 
-    // 3. CENTRADO EXACTO
+    // =========================================================
+    // CENTRADO (NO TOCAR)
+    // =========================================================
     const printCenteredPrecision = (text, isBold = false) => {
         const str = String(text).trim();
         const textLen = str.length * CHAR_WIDTH_PX;
         const pos = Math.floor((PRINTER_WIDTH_PX - textLen) / 2);
-        
-        if(isBold) encoder.bold(true);
+
+        if (isBold) encoder.bold(true);
         encoder.raw(moveCursor(pos)).text(str).newline();
-        if(isBold) encoder.bold(false);
+        if (isBold) encoder.bold(false);
     };
 
-    // 4. DOS COLUMNAS (Productos)
+    // =========================================================
+    // DOS COLUMNAS (SAFE)
+    // =========================================================
     const printSplitPrecision = (left, right) => {
-        // Izquierda (Pixel 0)
-        encoder.raw(moveCursor(0)).text(left);
-        
-        // Derecha (Pixel final)
+        encoder.raw(moveCursor(SAFE_LEFT_PX)).text(left);
+
         const strRight = String(right);
-        const posRight = PRINTER_WIDTH_PX - (strRight.length * CHAR_WIDTH_PX);
+        const posRight = SAFE_RIGHT_PX - (strRight.length * CHAR_WIDTH_PX);
         encoder.raw(moveCursor(posRight)).text(strRight).newline();
     };
 
-    // =================================================================
-    // 1. INICIALIZACIÓN
-    // =================================================================
+    // =========================================================
+    // INIT
+    // =========================================================
     encoder
         .initialize()
         .codepage('cp858')
-        .align('left'); // Base necesaria para ESC $
+        .align('left');
 
-    // Hardware Init
-    encoder.raw([0x1d, 0x4c, 0x00, 0x00]); // GS L 0
-    encoder.raw([0x1d, 0x57, 0x40, 0x02]); // GS W 576
+    encoder.raw([0x1D, 0x4C, 0x00, 0x00]); // GS L
+    encoder.raw([0x1D, 0x57, 0x40, 0x02]); // GS W 576
 
-    // =================================================================
-
-    // 2. ENCABEZADO
+    // =========================================================
+    // ENCABEZADO
+    // =========================================================
     printCenteredPrecision(data.empresa.razonSocial || 'EMPRESA', true);
     printCenteredPrecision(`RUT: ${data.empresa.rut || '-'}`);
-    // Recorte seguro para centrado
     printCenteredPrecision((data.empresa.direccion || 'Temuco').substring(0, 48));
     encoder.newline();
 
-    // 3. INFO VENTA
+    // =========================================================
+    // INFO VENTA
+    // =========================================================
     const folioText = data.venta.folio || data.venta.id_venta || '---';
-    
-    printDesignerSeparator(); // <--- SEPARADOR CON HUECO CENTRAL
-    printCenteredPrecision(`BOLETA N: ${folioText}`, true);
-    encoder.raw(moveCursor(0)).text(`FECHA: ${data.venta.fecha}`).newline();
-    printDesignerSeparator();
-    encoder.newline();
 
-    // 4. PRODUCTOS
+    printSeparatorDouble();
+    printCenteredPrecision(`BOLETA N° ${folioText}`, true);
+    encoder.raw(moveCursor(SAFE_LEFT_PX)).text(`FECHA: ${data.venta.fecha}`).newline();
+    printSeparatorDouble();
+
+    // =========================================================
+    // PRODUCTOS
+    // =========================================================
     printSplitPrecision('CANT DESCRIPCION', 'TOTAL');
-    printDesignerSeparator();
+    printSeparatorDouble();
 
     data.detalles.forEach(d => {
         const cant = String(d.cantidad);
         const precio = formatCLP(d.subtotal);
         const nombre = (d.nombre || '').substring(0, 25);
-        
-        const leftPart = `${cant.padEnd(4)} ${nombre}`;
-        printSplitPrecision(leftPart, precio);
+        const left = `${cant.padEnd(4)} ${nombre}`;
+
+        printSplitPrecision(left, precio);
     });
 
-    printDesignerSeparator();
+    printSeparatorDouble();
 
-    // 5. TOTALES (Neto/IVA a la derecha)
+    // =========================================================
+    // TOTALES
+    // =========================================================
     const total = data.total;
     const neto = Math.round(total / 1.19);
     const iva = total - neto;
 
     printRightPrecision(`Neto: ${formatCLP(neto)}`);
     printRightPrecision(`IVA:  ${formatCLP(iva)}`);
-    
     encoder.newline();
-
-    // 6. TOTAL FINAL (Normal, Bold, Derecha Exacta)
     printRightPrecision(`TOTAL: ${formatCLP(total)}`, true);
 
-    // 7. TIMBRE
+    // =========================================================
+    // TIMBRE
+    // =========================================================
     encoder.newline();
     try {
         let imgSource = null;
+
         if (preGeneratedImg) {
-             imgSource = preGeneratedImg.startsWith('data:') ? preGeneratedImg : `data:image/png;base64,${preGeneratedImg}`;
+            imgSource = preGeneratedImg.startsWith('data:')
+                ? preGeneratedImg
+                : `data:image/png;base64,${preGeneratedImg}`;
         } else if (timbreXml) {
-            const tedContent = extraerTedDelXml(timbreXml);
-            if (tedContent) imgSource = await generarPdf417Base64(tedContent);
+            const ted = extraerTedDelXml(timbreXml);
+            if (ted) imgSource = await generarPdf417Base64(ted);
         }
 
         if (imgSource) {
             const img = new Image();
             img.src = imgSource;
-            await new Promise(r => { img.onload = r; img.onerror = r; });
+            await new Promise(r => img.onload = r);
 
             const canvas = document.createElement('canvas');
             canvas.width = 576;
             canvas.height = Math.ceil(img.height / 8) * 8;
+
             const ctx = canvas.getContext('2d');
-            
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, 576, canvas.height);
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, (576 - img.width) / 2, 0);
 
-            encoder.align('center') 
+            encoder.align('center')
                    .image(canvas, 576, canvas.height, 'atkinson')
-                   .newline();
-            
-            encoder.align('left'); 
+                   .newline()
+                   .align('left');
+
             printCenteredPrecision('Timbre Electronico SII');
             printCenteredPrecision('Verifique en www.sii.cl');
         } else {
             printCenteredPrecision('(Sin Timbre)');
         }
-    } catch (e) {
+    } catch {
         printCenteredPrecision('(Error Timbre)');
     }
 
