@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-// 1. IMPORTA NORMAL SOLO EL LOGIN (Lo primero que se ve)
+import LandingPage from '../pages/LandingPage.vue'
 import Login from '../pages/Login.vue'
 
-// 2. EL RESTO, IMPORTALOS ASÍ (Lazy Loading):
 const Dashboard = () => import('../pages/Dashboard.vue')
 const Estadisticas = () => import('../pages/Estadisticas.vue')
 const Ventas = () => import('../pages/Ventas.vue')
@@ -15,8 +14,9 @@ const Usuarios = () => import('../pages/Usuarios.vue')
 const Importer = () => import('../pages/Importer.vue')
 
 const routes = [
+  { path: '/', component: LandingPage },   // 👈 Landing inicial
   { path: '/login', component: Login },
-  { path: '/', redirect: '/dashboard' },
+
   { path: '/dashboard', component: Dashboard },
   { path: '/estadisticas', component: Estadisticas },
   { path: '/ventas', component: Ventas },

@@ -221,7 +221,7 @@ async function finalizeImport() {
       destTable: selectedDestTable.value,
       mapping: payload,
       staticValues,
-      empresaId: myEmpresaId, // <--- AQUÍ VA LA MAGIA
+      empresaId: myEmpresaId, 
     })
 
     if (response.inserted)

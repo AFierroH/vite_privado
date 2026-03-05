@@ -70,13 +70,13 @@ watchEffect(() => console.log('Usuario actual:', user.value))
 </script>
 
 <template>
-  <!-- 👇 Ya no usamos flex ni justify-center -->
   <div class="h-screen w-screen bg-[var(--bg-deep)] text-[var(--text-primary)]">
     <div v-if="!isReady" class="flex items-center justify-center h-full text-gray-400">
       Cargando sesión...
     </div>
 
-    <LoginPage v-else-if="!user" @login-success="handleLogin" />
+    <router-view v-else-if="!user" @login-success="handleLogin" />
+
     <MainLayout v-else :user="user" @logout="logout" />
   </div>
 </template>

@@ -36,22 +36,22 @@
       
       <div class="lg:col-span-2 flex flex-col overflow-hidden">
          
-         <div class="p-4 bg-[var(--panel)] rounded mb-4 border border-[var(--border)] shadow-sm">
+<div class="p-4 bg-[var(--panel)] rounded mb-4 border border-[var(--border)] shadow-sm">
              <input 
                 ref="searchInput"
                 v-model="q" 
-                @input="search" 
+                @input="buscarDesdeCero" 
                 placeholder="Buscar por nombre, código o marca..." 
                 class="w-full p-3 bg-[var(--input-bg)] rounded border border-[var(--input-border)] text-lg outline-none focus:border-[var(--accent)] placeholder:text-gray-500" 
              />
          </div>
 
          <div class="p-4 bg-[var(--panel)] rounded flex-1 flex flex-col overflow-hidden border border-[var(--border)] shadow-sm relative">
-             <div v-if="isLoading" class="absolute inset-0 bg-[var(--panel)]/80 backdrop-blur-sm flex items-center justify-center z-10">
+             <div v-if="isLoading && page === 1" class="absolute inset-0 bg-[var(--panel)]/80 backdrop-blur-sm flex items-center justify-center z-10">
                 <svg class="animate-spin h-8 w-8 text-[var(--accent)]" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
              </div>
 
-             <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-3 content-start pr-2 custom-scroll">
+             <div class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-3 content-start pr-2 custom-scroll" @scroll="handleScroll">
                  <div v-if="productos.length === 0 && !isLoading" class="col-span-full text-center text-gray-500 py-10 italic">
                     Sin resultados.
                  </div>
@@ -64,6 +64,10 @@
                        <span v-if="p.codigo_barra" class="text-[10px] text-[var(--text-secondary)] font-mono">{{ p.codigo_barra }}</span>
                        <div class="text-[var(--text-secondary)] font-mono font-bold group-hover:text-[var(--text-primary)]">{{ formatPrice(p.precio) }}</div>
                     </div>
+                 </div>
+
+                 <div v-if="isLoading && page > 1" class="col-span-full text-center text-[var(--text-secondary)] py-2">
+                    Cargando más...
                  </div>
              </div>
          </div>
@@ -171,11 +175,59 @@ watch([printerType, printerInfo, usarImpresora, selectedUsbDevice], () => {
   }))
 }, { deep: true })
 
-const q = ref(''); const productos = ref([]); const cart = ref([]);
+const q = ref(''); 
+const productos = ref([]); 
+const cart = ref([]);
 const total = computed(() => cart.value.reduce((a,b) => a + (b.subtotal||0), 0));
-function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
-function clear() { cart.value = []; q.value = ''; search(); }
 
+// NUEVAS VARIABLES DE PAGINACIÓN
+const page = ref(1);
+const limit = 20;
+const hasMore = ref(true);
+
+function formatPrice(val) { return new Intl.NumberFormat('es-CL', {style:'currency', currency:'CLP'}).format(val||0) }
+
+// LIMPIAR AHORA USA buscarDesdeCero()
+function clear() { cart.value = []; q.value = ''; buscarDesdeCero(); }
+
+// --- LÓGICA DE SCROLL INFINITO ---
+async function buscarDesdeCero() {
+    page.value = 1; 
+    hasMore.value = true; 
+    productos.value = [];
+    await loadMore();
+}
+
+async function loadMore() {
+    if (isLoading.value || !hasMore.value) return;
+    
+    isLoading.value = true;
+    const session = JSON.parse(localStorage.getItem('session') || '{}');
+    const myEmpresaId = session.user?.id_empresa || 1;
+    
+    try {
+        // Asegúrate de pasar page y limit aquí
+        const r = await fetchProducts(q.value, myEmpresaId, page.value, limit);
+        const nuevos = r.data || r || [];
+        
+        if (nuevos.length < limit) hasMore.value = false;
+        
+        productos.value = [...productos.value, ...nuevos];
+        page.value++;
+    } catch(e) { 
+        productos.value = []; 
+    } finally { 
+        isLoading.value = false; 
+    }
+}
+
+function handleScroll(e) {
+    const { scrollTop, clientHeight, scrollHeight } = e.target;
+    // Si estamos a 50px de llegar al final del contenedor, cargamos más
+    if (scrollTop + clientHeight >= scrollHeight - 50) {
+        loadMore();
+    }
+}
 async function handleGlobalScan(code, isInputFocused) {
     if (isInputFocused) return;
 
@@ -356,8 +408,7 @@ async function checkout() {
             alert(`Venta registrada exitosamente\nFolio: ${folioParaImprimir}`);
         }
 
-        search();
-
+        buscarDesdeCero();
     } catch (error) {
         console.error('Error en checkout:', error);
         alert('Error al procesar la venta: ' + (error.message || error));
@@ -400,7 +451,7 @@ async function fillLocalIp() {
 }
 
 onMounted(() => {
-    search();
+    buscarDesdeCero();
     listUsbDevices();
     if(isElectron) fillLocalIp();
     ScannerListener.onScan(handleGlobalScan);
