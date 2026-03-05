@@ -378,7 +378,6 @@ async function checkout() {
                 
                 console.log('Preparando impresión...');
                 let rawBytes = null;
-                const { generarTicketEscPos } = await import('../utils/escposEncoder.js');
                 rawBytes = await generarTicketEscPos(printDataObj, timbreXml, pdf417Img);
 
                 await PrinterService.imprimir({
