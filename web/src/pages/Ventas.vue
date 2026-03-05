@@ -62,6 +62,9 @@
                     <div class="font-bold text-sm line-clamp-2 group-hover:text-[var(--accent)]">{{ p.nombre }}</div>
                     <div class="flex justify-between items-end">
                        <span v-if="p.codigo_barra" class="text-[10px] text-[var(--text-secondary)] font-mono">{{ p.codigo_barra }}</span>
+                       <div :class="['text-[10px] font-bold', p.stock > 0 ? 'text-green-500' : 'text-red-500']">
+    Stock: {{ p.stock || 0 }}
+</div>
                        <div class="text-[var(--text-secondary)] font-mono font-bold group-hover:text-[var(--text-primary)]">{{ formatPrice(p.precio) }}</div>
                     </div>
                  </div>
@@ -83,7 +86,15 @@
                      <div class="text-sm font-medium leading-tight">{{ it.nombre }}</div>
                      <div class="text-xs text-[var(--text-secondary)] flex items-center gap-2 mt-1">
                          <span>{{ formatPrice(it.precio) }}</span><span>x</span>
-                         <input type="number" v-model.number="it.cantidad" min="1" class="w-12 bg-[var(--input-bg)] text-center border border-[var(--input-border)] rounded h-6" @change="it.subtotal = it.cantidad * it.precio">
+                         <input 
+   type="number" 
+   v-model.number="it.cantidad" 
+   min="1" 
+   :max="it.max_stock"
+   class="w-12 bg-[var(--input-bg)] text-center border border-[var(--input-border)] rounded h-6" 
+   @change="validarCantidadCart(it)"
+   @keyup="validarCantidadCart(it)"
+>
                      </div>
                  </div>
                  <div class="text-right flex flex-col items-end">
@@ -195,6 +206,7 @@ async function buscarDesdeCero() {
     page.value = 1; 
     hasMore.value = true; 
     productos.value = [];
+    isLoading.value = false;
     await loadMore();
 }
 
@@ -301,15 +313,42 @@ async function search() {
 }
 
 function addProduct(p) {
+    const stockDisponible = p.stock || 0;
+
     const exist = cart.value.find(i => i.id_producto === p.id_producto);
+    
     if (exist) { 
+        // Si ya está en el carrito, verificamos si al sumar 1 superamos el stock
+        if (exist.cantidad >= stockDisponible) {
+            alert(`¡Stock insuficiente! Solo quedan ${stockDisponible} unidades de ${p.nombre}.`);
+            return;
+        }
         exist.cantidad++; 
-        exist.subtotal = exist.cantidad * exist.precio 
+        exist.subtotal = exist.cantidad * exist.precio;
     } else { 
-        cart.value.push({ ...p, cantidad: 1, subtotal: p.precio }) 
+        // Si es la primera vez que lo agrega, verificamos que haya al menos 1
+        if (stockDisponible < 1) {
+            alert(`El producto ${p.nombre} está agotado (Stock: 0).`);
+            return;
+        }
+        // Lo guardamos en el carrito y nos anotamos su stock máximo
+        cart.value.push({ ...p, cantidad: 1, subtotal: p.precio, max_stock: stockDisponible });
     }
 }
-
+function validarCantidadCart(it) {
+    // Si escribió un número mayor al stock
+    if (it.cantidad > it.max_stock) {
+        alert(`Stock insuficiente. El máximo disponible es ${it.max_stock}.`);
+        it.cantidad = it.max_stock;
+    } 
+    // Si escribió un 0, un negativo o lo dejó vacío
+    else if (it.cantidad < 1 || !it.cantidad) {
+        it.cantidad = 1;
+    }
+    
+    // Recalculamos el subtotal y el total de la venta
+    it.subtotal = it.cantidad * it.precio;
+}
 async function checkout() {
     if (cart.value.length === 0) return alert('Carrito vacío');
     
